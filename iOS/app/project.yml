@@ -1,0 +1,35 @@
+name: PDFSealMaster
+
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    iOS: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_CFBundleDisplayName: PDF Seal Master
+    TARGETED_DEVICE_FAMILY: "1"
+
+targets:
+  PDFSealMaster:
+    type: application
+    platform: iOS
+    sources:
+      - path: PDFSealMaster
+        excludes:
+          - "**/README.md"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johnseal918.pdfsealmaster
+
+schemes:
+  PDFSealMaster:
+    build:
+      targets:
+        PDFSealMaster: all

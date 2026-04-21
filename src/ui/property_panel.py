@@ -1,4 +1,4 @@
-"""
+﻿"""
 property_panel.py — 右侧属性/参数/模板操作面板（M1阶段骨架，后续分阶段扩充）
 
 M1: 基础框架 + 文件信息展示
@@ -21,6 +21,7 @@ class PropertyPanel(QWidget):
 
     # 信号必须定义为类属性
     decolor_params_changed = Signal(dict)
+    decolor_apply_requested = Signal(dict)
     binding_params_changed = Signal(dict)
     template_action = Signal(str, str) # action: "refresh", "load", "save", "delete" -> name
 
@@ -98,6 +99,15 @@ class PropertyPanel(QWidget):
         noise_layout.addRow("纸张纤维噪粒:", box_n)
         decolor_layout.addLayout(noise_layout)
 
+        box_decolor_actions = QHBoxLayout()
+        self.btn_apply_decolor = QPushButton("应用灰度")
+        self.btn_apply_decolor.clicked.connect(self._emit_apply_decolor)
+        self.btn_cancel_decolor = QPushButton("取消灰度")
+        self.btn_cancel_decolor.clicked.connect(self._emit_cancel_decolor)
+        box_decolor_actions.addWidget(self.btn_apply_decolor)
+        box_decolor_actions.addWidget(self.btn_cancel_decolor)
+        decolor_layout.addLayout(box_decolor_actions)
+
         decolor_group.setLayout(decolor_layout)
         layout.addWidget(decolor_group)
 
@@ -131,7 +141,7 @@ class PropertyPanel(QWidget):
         box_pages.addWidget(self.spin_binding_end)
         
         self.spin_binding_margin = QSpinBox()
-        self.spin_binding_margin.setRange(-50, 100)
+        self.spin_binding_margin.setRange(0, 100)
         self.spin_binding_margin.setValue(15)
         self.spin_binding_margin.setSuffix(" px")
         
@@ -193,8 +203,9 @@ class PropertyPanel(QWidget):
         
         box_tpl_top = QHBoxLayout()
         self.combo_templates = QComboBox()
-        self.btn_refresh_tpl = QPushButton("🔄")
-        self.btn_refresh_tpl.setFixedWidth(30)
+        self.btn_refresh_tpl = QPushButton("刷新")
+        self.btn_refresh_tpl.setToolTip("刷新模板列表")
+        self.btn_refresh_tpl.setFixedWidth(56)
         box_tpl_top.addWidget(self.combo_templates)
         box_tpl_top.addWidget(self.btn_refresh_tpl)
         
@@ -267,6 +278,8 @@ class PropertyPanel(QWidget):
         self.combo_mode.setEnabled(checked)
         self.slider_thresh.setEnabled(checked and self.combo_mode.currentText() == "manual")
         self.slider_noise.setEnabled(checked)
+        self.btn_apply_decolor.setEnabled(True)
+        self.btn_cancel_decolor.setEnabled(True)
 
     def _on_thresh_slide(self, val):
         self.label_thresh_val.setText(str(val))
@@ -282,27 +295,57 @@ class PropertyPanel(QWidget):
         else:
             self.slider_thresh.setEnabled(self.chk_enable_decolor.isChecked())
 
-        params = {
+        params = self._collect_decolor_params()
+        self.decolor_params_changed.emit(params)
+
+    def _collect_decolor_params(self):
+        return {
             "enabled": self.chk_enable_decolor.isChecked(),
             "mode": self.combo_mode.currentText(),
             "threshold": self.slider_thresh.value(),
-            "noise_intensity": self.slider_noise.value() / 1000.0  # 转为0到0.1区间浮点
+            "noise_intensity": self.slider_noise.value() / 1000.0,
         }
+
+    def _emit_apply_decolor(self):
+        # "应用灰度"是显式执行动作，应强制进入 enabled=True 状态，
+        # 避免用户刚点过"取消灰度"后再次应用时仍被当成恢复原图分支。
+        self.chk_enable_decolor.blockSignals(True)
+        self.chk_enable_decolor.setChecked(True)
+        self.chk_enable_decolor.blockSignals(False)
+        self._set_decolor_ui_enabled(True)
+        params = self._collect_decolor_params()
         self.decolor_params_changed.emit(params)
+        self.decolor_apply_requested.emit(params)
+
+    def _emit_cancel_decolor(self):
+        self.chk_enable_decolor.blockSignals(True)
+        self.chk_enable_decolor.setChecked(False)
+        self.chk_enable_decolor.blockSignals(False)
+        self._set_decolor_ui_enabled(False)
+        params = self._collect_decolor_params()
+        self.decolor_params_changed.emit(params)
+        self.decolor_apply_requested.emit(params)
 
 
-    def update_file_info(self, filename: str, pages: int, width: int, height: int):
-        """更新文件信息展示，并同步骑缝章页码区间默认值。"""
+    def update_file_info(self, filename: str, pages: int, width: int, height: int, reset_binding_range: bool = False):
+        """更新文件信息展示，并同步骑缝章页码区间边界。"""
         self._label_filename.setText(filename)
         self._label_filename.setToolTip(filename)
         self._label_pages.setText(str(pages))
         self._label_size.setText(f"{width} × {height} px")
-        
-        # 同步骑缝章页码区间为整个文档范围
+
         self.spin_binding_start.setMaximum(max(1, pages))
         self.spin_binding_end.setMaximum(max(1, pages))
-        self.spin_binding_start.setValue(1)
-        self.spin_binding_end.setValue(max(1, pages))
+        if reset_binding_range:
+            self.spin_binding_start.setValue(1)
+            self.spin_binding_end.setValue(max(1, pages))
+        else:
+            self.spin_binding_start.setValue(
+                max(self.spin_binding_start.minimum(), min(self.spin_binding_start.maximum(), self.spin_binding_start.value()))
+            )
+            self.spin_binding_end.setValue(
+                max(self.spin_binding_end.minimum(), min(self.spin_binding_end.maximum(), self.spin_binding_end.value()))
+            )
         
     def _emit_refresh_templates(self):
         self.template_action.emit("refresh", "")
@@ -390,7 +433,10 @@ class PropertyPanel(QWidget):
         end_page = int(params.get("end_page", self.spin_binding_end.value() - 1)) + 1
         self.spin_binding_start.setValue(max(self.spin_binding_start.minimum(), min(self.spin_binding_start.maximum(), start_page)))
         self.spin_binding_end.setValue(max(self.spin_binding_end.minimum(), min(self.spin_binding_end.maximum(), end_page)))
-        self.spin_binding_margin.setValue(int(params.get("margin", self.spin_binding_margin.value())))
+        # Backward compatibility: older templates used negative margin to mean
+        # "move inward by this many pixels", so normalize to a non-negative gap.
+        margin = abs(int(params.get("margin", self.spin_binding_margin.value())))
+        self.spin_binding_margin.setValue(margin)
         self.slider_binding_loss.setValue(int(params.get("loss", self.slider_binding_loss.value())))
         self.spin_binding_scale.setValue(float(params.get("scale", self.spin_binding_scale.value())))
         self.spin_binding_rotation.setValue(int(params.get("rotation", self.spin_binding_rotation.value())))

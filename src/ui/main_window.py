@@ -7,7 +7,7 @@ Each tab keeps its own document model, canvas state, parameters, and undo stack.
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -117,7 +117,8 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._doc_tabs)
 
         self._property_panel = PropertyPanel()
-        self._property_panel.decolor_params_changed.connect(self._apply_cv_pipeline)
+        self._property_panel.decolor_params_changed.connect(self._on_decolor_params_changed)
+        self._property_panel.decolor_apply_requested.connect(self._apply_cv_pipeline)
         self._property_panel.binding_params_changed.connect(self._on_binding_params_changed)
         self._property_panel.template_action.connect(self._on_template_action)
         splitter.addWidget(self._property_panel)
@@ -138,6 +139,14 @@ class MainWindow(QMainWindow):
 
     def _setup_status_bar(self):
         self._status_bar = QStatusBar()
+        # Keep status API available, but remove the visual bar area entirely.
+        self._status_bar.setSizeGripEnabled(False)
+        self._status_bar.setContentsMargins(0, 0, 0, 0)
+        self._status_bar.setStyleSheet(
+            "QStatusBar { border: 0; margin: 0; padding: 0; min-height: 0px; max-height: 0px; }"
+        )
+        self._status_bar.setFixedHeight(0)
+        self._status_bar.setVisible(False)
         self.setStatusBar(self._status_bar)
         self._status_bar.showMessage("就绪 - 可同时打开多个文件（标签页）")
 
@@ -206,6 +215,55 @@ class MainWindow(QMainWindow):
             "displacement": 6.0,
         }
 
+    def _normalize_binding_params(self, params: dict | None, page_count: int, force_full_range: bool = False) -> dict:
+        """Keep binding params valid for the current document and migrate legacy values."""
+        normalized = dict(params or {})
+        enabled = bool(normalized.get("enabled", normalized.get("preview", False)))
+        normalized["enabled"] = enabled
+        normalized["preview"] = enabled
+        normalized["asset_id"] = normalized.get("asset_id", "") or ""
+        normalized["margin"] = max(0, abs(int(normalized.get("margin", 15))))
+        normalized["loss"] = max(0, int(normalized.get("loss", 4)))
+        normalized["scale"] = float(normalized.get("scale", 1.0))
+        normalized["rotation"] = int(normalized.get("rotation", 0))
+        normalized["y_offset"] = int(normalized.get("y_offset", 0))
+        normalized["displacement"] = float(normalized.get("displacement", 6.0))
+
+        if page_count <= 0:
+            normalized["start_page"] = 0
+            normalized["end_page"] = 0
+            return normalized
+
+        if force_full_range and page_count >= 2:
+            normalized["start_page"] = 0
+            normalized["end_page"] = page_count - 1
+            return normalized
+
+        start_page = int(normalized.get("start_page", 0))
+        end_page = int(normalized.get("end_page", page_count - 1))
+        start_page = max(0, min(start_page, page_count - 1))
+        end_page = max(0, min(end_page, page_count - 1))
+        if end_page < start_page:
+            start_page, end_page = end_page, start_page
+
+        normalized["start_page"] = start_page
+        normalized["end_page"] = end_page
+        return normalized
+
+    def _decolor_signature(self, params: dict):
+        """Build a stable signature for lazy per-page CV cache."""
+        return (
+            bool(params.get("enabled")),
+            str(params.get("mode", "otsu")),
+            int(params.get("threshold", 120)),
+            round(float(params.get("noise_intensity", 0.03)), 5),
+        )
+
+    def _invalidate_render_cache(self, ctx: dict):
+        ctx["render_sig"] = None
+        ctx["rendered_pages"] = set()
+        ctx["prefetch_pending"] = False
+
     # ---------------------- tab/document lifecycle ----------------------
     def _open_document_as_tab(self, file_path: str):
         path = Path(file_path)
@@ -221,26 +279,34 @@ class MainWindow(QMainWindow):
         canvas_widget = CanvasWidget()
         canvas_widget.set_total_pages(doc_model.page_count)
 
+        initial_binding_params = self._normalize_binding_params(
+            self._read_panel_binding_params(),
+            doc_model.page_count,
+            force_full_range=True,
+        )
+
         ctx = {
             "file_path": file_path,
             "doc_model": doc_model,
             "canvas_widget": canvas_widget,
             "decolor_params": self._read_panel_decolor_params(),
-            "binding_params": self._read_panel_binding_params(),
+            "binding_params": initial_binding_params,
+            "render_sig": None,
+            "rendered_pages": set(),
+            "prefetch_pending": False,
         }
 
         canvas_widget.page_changed.connect(lambda idx, c=ctx: self._on_page_changed(c, idx))
         canvas_widget.canvas_view.binding_moved.connect(lambda y, c=ctx: self._on_binding_moved(c, y))
+        canvas_widget.canvas_view.stamp_size_unified.connect(lambda w, c=ctx: self._on_stamp_size_unified(c, w))
 
-        if ctx["decolor_params"].get("enabled"):
-            self._render_ctx_page(ctx, 0)
-        else:
-            self._show_ctx_page(ctx, 0)
+        self._show_ctx_page(ctx, 0)
 
         tab_index = self._doc_tabs.addTab(canvas_widget, path.name)
         self._doc_tabs.setTabToolTip(tab_index, file_path)
         self._contexts[canvas_widget] = ctx
         self._doc_tabs.setCurrentIndex(tab_index)
+        self._on_tab_changed(tab_index)
         self._status_bar.showMessage(f"已打开: {path.name} ({doc_model.page_count} 页)", 3000)
 
     def _on_tab_changed(self, _index: int):
@@ -252,8 +318,6 @@ class MainWindow(QMainWindow):
             return
 
         self._bind_undo_stack(ctx["canvas_widget"].canvas_view.undo_stack)
-        self._property_panel.set_decolor_params(ctx["decolor_params"], emit_signal=False)
-        self._property_panel.set_binding_params(ctx["binding_params"], emit_signal=False)
 
         model = ctx["doc_model"]
         page_idx = ctx["canvas_widget"].get_current_page()
@@ -264,7 +328,12 @@ class MainWindow(QMainWindow):
                 pages=model.page_count,
                 width=page_img.width,
                 height=page_img.height,
+                reset_binding_range=False,
             )
+        self._property_panel.set_decolor_params(ctx["decolor_params"], emit_signal=False)
+        normalized_binding = self._normalize_binding_params(ctx["binding_params"], model.page_count)
+        ctx["binding_params"] = normalized_binding
+        self._property_panel.set_binding_params(normalized_binding, emit_signal=False)
         self._show_ctx_page(ctx, page_idx)
         self.setWindowTitle(f"{self.APP_TITLE} - {Path(ctx['file_path']).name}")
 
@@ -312,6 +381,15 @@ class MainWindow(QMainWindow):
             self._show_ctx_page(ctx, page_index)
             return
 
+        sig = self._decolor_signature(params)
+        if ctx.get("render_sig") != sig:
+            ctx["render_sig"] = sig
+            ctx["rendered_pages"] = set()
+
+        if page_index in ctx["rendered_pages"]:
+            self._show_ctx_page(ctx, page_index)
+            return
+
         cv_img = pil_to_numpy(orig_pil)
         cv_img = CVProcessor.decolorize(
             cv_img,
@@ -324,7 +402,46 @@ class MainWindow(QMainWindow):
         )
         result_pil = numpy_to_pil(cv_img)
         model.set_page(page_index, result_pil)
+        ctx["rendered_pages"].add(page_index)
         self._show_ctx_page(ctx, page_index)
+
+        # Warm up next page in next event-loop turn to reduce click-to-render delay.
+        next_page = page_index + 1
+        if next_page < model.page_count and not ctx.get("prefetch_pending"):
+            ctx["prefetch_pending"] = True
+            QTimer.singleShot(0, lambda c=ctx, p=next_page, s=sig: self._prefetch_page(c, p, s))
+
+    def _prefetch_page(self, ctx: dict, page_index: int, expected_sig):
+        ctx["prefetch_pending"] = False
+        model = ctx["doc_model"]
+        params = ctx["decolor_params"]
+        if not params.get("enabled"):
+            return
+        if page_index < 0 or page_index >= model.page_count:
+            return
+
+        sig = self._decolor_signature(params)
+        if sig != expected_sig or ctx.get("render_sig") != expected_sig:
+            return
+        if page_index in ctx["rendered_pages"]:
+            return
+
+        orig_pil = model.get_original_page(page_index)
+        if not orig_pil:
+            return
+
+        cv_img = pil_to_numpy(orig_pil)
+        cv_img = CVProcessor.decolorize(
+            cv_img,
+            threshold=params.get("threshold", 120),
+            mode=params.get("mode", "otsu"),
+        )
+        cv_img = CVProcessor.add_paper_noise(
+            cv_img,
+            intensity=params.get("noise_intensity", 0.03),
+        )
+        model.set_page(page_index, numpy_to_pil(cv_img))
+        ctx["rendered_pages"].add(page_index)
 
     # ---------------------- interaction handlers ----------------------
     def _sync_binding_assets(self, *args):
@@ -336,27 +453,107 @@ class MainWindow(QMainWindow):
             self._property_panel.spin_binding_y.setValue(y_offset)
 
     def _on_page_changed(self, ctx: dict, page_index: int):
-        if ctx["decolor_params"].get("enabled"):
-            self._render_ctx_page(ctx, page_index)
-        else:
-            self._show_ctx_page(ctx, page_index)
+        self._show_ctx_page(ctx, page_index)
         if ctx is self._current_ctx():
             self._status_bar.showMessage(f"第 {page_index + 1} / {ctx['doc_model'].page_count} 页")
+
+    def _on_stamp_size_unified(self, ctx: dict, target_width_a4: float):
+        if not ctx:
+            return
+
+        binding_params = dict(ctx.get("binding_params", {}))
+        binding_params["target_width_a4"] = max(1.0, float(target_width_a4))
+        binding_params["scale"] = 1.0
+        normalized = self._normalize_binding_params(binding_params, ctx["doc_model"].page_count)
+        ctx["binding_params"] = normalized
+
+        if ctx is self._current_ctx():
+            self._property_panel.set_binding_params(normalized, emit_signal=False)
+            self._status_bar.showMessage("已统一所有印章与骑缝章尺寸", 3000)
+
+        self._update_binding_preview_for_ctx(ctx)
 
     def _on_binding_params_changed(self, params: dict):
         ctx = self._current_ctx()
         if not ctx:
             return
+        params = self._normalize_binding_params(params, ctx["doc_model"].page_count)
+        if params.get("enabled") and ctx["doc_model"].page_count >= 2:
+            start_page = int(params.get("start_page", 0))
+            end_page = int(params.get("end_page", 0))
+            if (end_page - start_page + 1) < 2:
+                params = params.copy()
+                params["start_page"] = 0
+                params["end_page"] = ctx["doc_model"].page_count - 1
+                self._property_panel.set_binding_params(params, emit_signal=False)
         ctx["binding_params"] = params
         self._update_binding_preview_for_ctx(ctx)
+
+    def _on_decolor_params_changed(self, params: dict):
+        ctx = self._current_ctx()
+        if not ctx:
+            return
+        ctx["decolor_params"] = params
+        self._invalidate_render_cache(ctx)
 
     def _apply_cv_pipeline(self, params: dict):
         ctx = self._current_ctx()
         if not ctx:
             return
+
         ctx["decolor_params"] = params
+        model = ctx["doc_model"]
+        total = model.page_count
+        if total <= 0:
+            return
+
+        applying = bool(params.get("enabled"))
+        title = "批量灰度处理" if applying else "恢复原图"
+        text = "正在对全文件执行灰度渲染..." if applying else "正在恢复全文件原图..."
+        progress = QProgressDialog(text, "取消", 0, total, self)
+        progress.setWindowTitle(title)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+
+        for i in range(total):
+            if progress.wasCanceled():
+                break
+            if applying:
+                orig_pil = model.get_original_page(i)
+                if orig_pil:
+                    cv_img = pil_to_numpy(orig_pil)
+                    cv_img = CVProcessor.decolorize(
+                        cv_img,
+                        threshold=params.get("threshold", 120),
+                        mode=params.get("mode", "otsu"),
+                    )
+                    cv_img = CVProcessor.add_paper_noise(
+                        cv_img,
+                        intensity=params.get("noise_intensity", 0.03),
+                    )
+                    model.set_page(i, numpy_to_pil(cv_img))
+            else:
+                model.reset_page(i)
+            progress.setValue(i + 1)
+            QApplication.processEvents()
+
+        progress.close()
+        if progress.wasCanceled():
+            self._status_bar.showMessage("灰度处理已取消", 3000)
+        else:
+            self._status_bar.showMessage("全文件灰度处理完成" if applying else "已恢复全文件原图", 4000)
+
+        self._invalidate_render_cache(ctx)
+        if applying:
+            ctx["render_sig"] = self._decolor_signature(params)
+            ctx["rendered_pages"] = set(range(total))
+        else:
+            ctx["render_sig"] = None
+            ctx["rendered_pages"] = set()
+
         current_page = ctx["canvas_widget"].get_current_page()
-        self._render_ctx_page(ctx, current_page)
+        self._show_ctx_page(ctx, current_page)
 
     def _update_binding_preview_for_ctx(self, ctx: dict):
         params = ctx["binding_params"]
@@ -429,7 +626,12 @@ class MainWindow(QMainWindow):
             if "decolor_params" in data:
                 self._property_panel.set_decolor_params(data["decolor_params"], emit_signal=True)
             if "binding_params" in data:
-                self._property_panel.set_binding_params(data["binding_params"], emit_signal=True)
+                binding_params = self._normalize_binding_params(
+                    data["binding_params"],
+                    ctx["doc_model"].page_count,
+                    force_full_range=True,
+                )
+                self._property_panel.set_binding_params(binding_params, emit_signal=True)
             self._status_bar.showMessage(f"模板 '{value}' 已加载", 3000)
 
     # ---------------------- menu actions ----------------------

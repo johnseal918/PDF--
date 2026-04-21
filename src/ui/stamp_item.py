@@ -221,6 +221,7 @@ class StampItem(QGraphicsObject):
         menu = QMenu()
         bring_front = menu.addAction("移到顶层")
         send_back = menu.addAction("移到底层")
+        unify_size = menu.addAction("将所有印章设置成此大小")
         menu.addSeparator()
         delete_item = menu.addAction("删除")
         
@@ -229,5 +230,7 @@ class StampItem(QGraphicsObject):
             self.action_requested.emit(self, "bring_front")
         elif action == send_back:
             self.action_requested.emit(self, "send_back")
+        elif action == unify_size:
+            self.action_requested.emit(self, "unify_size_all")
         elif action == delete_item:
             self.action_requested.emit(self, "delete")

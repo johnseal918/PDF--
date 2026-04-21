@@ -1,0 +1,48 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build and temporary outputs
+build/
+dist/
+tmp/
+temp/
+*.log
+
+# Environment and local secrets
+.env
+.env.*
+
+# Apple/Xcode local build files
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# iOS/macOS signing material
+*.p12
+*.mobileprovision
+*.cer
+*.key
+*.pem
+*.p8
+*.jks
+*.keystore

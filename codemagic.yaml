@@ -1,0 +1,38 @@
+workflows:
+  cm_connectivity_check:
+    name: CM Connectivity Check
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+    scripts:
+      - name: Show repository root and key folders
+        script: |
+          set -e
+          echo "Current directory:"
+          pwd
+          echo ""
+          echo "Root entries:"
+          ls -la
+          echo ""
+          echo "iOS folder entries (if exists):"
+          ls -la iOS || true
+          echo ""
+          echo "Project folder entries (if exists):"
+          ls -la iOS/app || true
+      - name: Detect Xcode project/workspace
+        script: |
+          set -e
+          echo "Searching for Xcode project files..."
+          find . -type d \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) | sed 's#^\./##' | sort || true
+          PROJECT_COUNT=$(find . -type d \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) | wc -l | tr -d ' ')
+          echo "Detected project/workspace count: ${PROJECT_COUNT}"
+          if [ "${PROJECT_COUNT}" = "0" ]; then
+            echo "No .xcodeproj / .xcworkspace found yet."
+            echo "Connectivity is verified. Next step is to add iOS project files or XcodeGen flow."
+          fi

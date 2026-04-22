@@ -87,11 +87,11 @@ struct EditorView: View {
                         Text("A4 缁熶竴鐢诲竷")
                             .font(.headline)
 
-                        Text("褰撳墠椤靛璞℃暟锛歕(viewModel.currentPageObjectCount)")
+                        Text("褰撳墠椤靛璞℃暟锛\(viewModel.currentPageObjectCount)")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        Text("棰勮妯″紡锛歕(viewModel.document.previewMode.displayName)")
+                        Text("棰勮妯″紡锛\(viewModel.document.previewMode.displayName)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -115,7 +115,7 @@ struct EditorView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("褰撳墠鍗扮珷锛歕(viewModel.selectedStampName)")
+                    Text("褰撳墠鍗扮珷锛\(viewModel.selectedStampName)")
                         .font(.footnote.weight(.medium))
 
                     Spacer()
@@ -132,7 +132,7 @@ struct EditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("褰撳墠閫変腑锛歕(viewModel.selectedObjectSummary)")
+                Text("褰撳墠閫変腑锛\(viewModel.selectedObjectSummary)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -140,7 +140,7 @@ struct EditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("瀵煎嚭缁嗚妭锛歕(viewModel.exportDetailMessage)")
+                Text("瀵煎嚭缁嗚妭锛\(viewModel.exportDetailMessage)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 

@@ -44,11 +44,11 @@ struct StampImportView: View {
                 .disabled(isProcessing)
 
             Stepper(value: $targetSizeMM, in: 5...80, step: 0.5) {
-                Text("鐩爣鐪熷疄灏哄锛歕(targetSizeMM, specifier: "%.1f") mm")
+                Text("鐩爣鐪熷疄灏哄锛\(targetSizeMM, specifier: "%.1f") mm")
             }
             .disabled(isProcessing)
 
-            Text("褰撳墠绱犳潗姹犲嵃绔犳暟锛歕(savedAssetCount)")
+            Text("褰撳墠绱犳潗姹犲嵃绔犳暟锛\(savedAssetCount)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -56,10 +56,10 @@ struct StampImportView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("绱犳潗鍚嶏細\(workingAsset.name)")
                     Text("鐘舵€侊細\(workingAsset.normalizationStatus.rawValue)")
-                    Text("鐩爣灏哄锛歕(workingAsset.finalPhysicalSizeMM ?? targetSizeMM, specifier: "%.1f") mm")
-                    Text("鏈夋晥杈圭晫锛歕(boundsSummary(for: workingAsset))")
-                    Text("瑁佽竟棰勮锛歕(boundsSummary(for: manualCropPreview(for: workingAsset)))")
-                    Text("schemaVersion锛歕(workingAsset.schemaVersion)")
+                    Text("鐩爣灏哄锛\(workingAsset.finalPhysicalSizeMM ?? targetSizeMM, specifier: "%.1f") mm")
+                    Text("鏈夋晥杈圭晫锛\(boundsSummary(for: workingAsset))")
+                    Text("瑁佽竟棰勮锛\(boundsSummary(for: manualCropPreview(for: workingAsset)))")
+                    Text("schemaVersion锛\(workingAsset.schemaVersion)")
                 }
                 .font(.subheadline)
                 .padding()

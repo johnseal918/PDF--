@@ -64,11 +64,11 @@ final class EditorViewModel: ObservableObject {
         }
 
         if let stamp = selectedObject.stampPlacement {
-            return "鍗扮珷锛歕(String(format: "%.1f", stamp.originXMM))mm, \(String(format: "%.1f", stamp.originYMM))mm 路 \(String(format: "%.1f", stamp.widthMM)) 脳 \(String(format: "%.1f", stamp.heightMM)) mm"
+            return "鍗扮珷锛\(String(format: "%.1f", stamp.originXMM))mm, \(String(format: "%.1f", stamp.originYMM))mm 路 \(String(format: "%.1f", stamp.widthMM)) 脳 \(String(format: "%.1f", stamp.heightMM)) mm"
         }
 
         if let signature = selectedObject.signaturePlacement {
-            return "绛惧悕锛歕(String(format: "%.1f", signature.originXMM))mm, \(String(format: "%.1f", signature.originYMM))mm 路 \(String(format: "%.1f", signature.widthMM)) 脳 \(String(format: "%.1f", signature.heightMM)) mm"
+            return "绛惧悕锛\(String(format: "%.1f", signature.originXMM))mm, \(String(format: "%.1f", signature.originYMM))mm 路 \(String(format: "%.1f", signature.widthMM)) 脳 \(String(format: "%.1f", signature.heightMM)) mm"
         }
 
         return "鏈€変腑瀵硅薄"

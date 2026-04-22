@@ -55,7 +55,7 @@ workflows:
           xcodebuild -list -project PDFSealMaster.xcodeproj
       - name: Build for iOS Simulator (unsigned)
         script: |
-          set -o pipefail
+          set -e
           cd iOS/app
 
           echo "Build settings snapshot:"
@@ -73,15 +73,21 @@ workflows:
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
             'EXCLUDED_ARCHS[sdk=iphonesimulator*]=x86_64' \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee xcodebuild.log
+            > xcodebuild.log 2>&1
 
-          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          BUILD_EXIT_CODE=$?
           set -e
+          echo ""
+          echo "===== Build tail (last 120 lines) ====="
+          tail -n 120 xcodebuild.log || true
+          echo "===== End build tail ====="
+
           if [ "${BUILD_EXIT_CODE}" -ne 0 ]; then
             echo ""
             echo "===== Extracted compiler errors ====="

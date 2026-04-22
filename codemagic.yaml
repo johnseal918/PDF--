@@ -95,3 +95,49 @@ workflows:
             echo "===== End errors ====="
             exit "${BUILD_EXIT_CODE}"
           fi
+      - name: Run unit tests on iOS Simulator
+        script: |
+          set -e
+          cd iOS/app
+
+          SIMULATOR_NAME=$(xcrun simctl list devices available \
+            | awk -F '[()]' '/iPhone/ {gsub(/^[ \t]+|[ \t]+$/, "", $1); print $1; exit}')
+
+          if [ -z "${SIMULATOR_NAME}" ]; then
+            echo "No available iPhone simulator device found."
+            exit 1
+          fi
+
+          echo "Using simulator: ${SIMULATOR_NAME}"
+
+          set +e
+          xcodebuild test \
+            -project "PDFSealMaster.xcodeproj" \
+            -scheme "PDFSealMaster" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=${SIMULATOR_NAME}" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            'EXCLUDED_ARCHS[sdk=iphonesimulator*]=x86_64' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > xcodebuild-test.log 2>&1
+
+          TEST_EXIT_CODE=$?
+          set -e
+
+          echo ""
+          echo "===== Test tail (last 120 lines) ====="
+          tail -n 120 xcodebuild-test.log || true
+          echo "===== End test tail ====="
+
+          if [ "${TEST_EXIT_CODE}" -ne 0 ]; then
+            echo ""
+            echo "===== Extracted test errors ====="
+            grep -n "error:" xcodebuild-test.log | tail -n 200 || true
+            grep -n "failed" xcodebuild-test.log | tail -n 200 || true
+            echo "===== End test errors ====="
+            exit "${TEST_EXIT_CODE}"
+          fi

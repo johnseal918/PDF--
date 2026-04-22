@@ -30,8 +30,23 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.johnseal918.pdfsealmaster
 
+  PDFSealMasterTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PDFSealMasterTests
+    dependencies:
+      - target: PDFSealMaster
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johnseal918.pdfsealmaster.tests
+
 schemes:
   PDFSealMaster:
     build:
       targets:
         PDFSealMaster: all
+    test:
+      gatherCoverageData: false
+      targets:
+        - name: PDFSealMasterTests

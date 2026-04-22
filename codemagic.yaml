@@ -42,7 +42,7 @@ workflows:
         # - pre_release: compile + tests + stricter log output (reserved for release window)
         BUILD_TIER: compile_only
         # Optional free-text reason for audit logs, e.g. "M2 signature batch closure"
-        BUILD_REASON: ""
+        BUILD_REASON: manual_trigger
     scripts:
       - name: Build governance preflight
         script: |

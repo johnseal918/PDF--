@@ -23,9 +23,9 @@ struct StampImportView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Button("鍏抽棴", action: onClose)
+                Button("关闭", action: onClose)
                 Spacer()
-                Text("鍗扮珷瀵煎叆楠ㄦ灦")
+                Text("印章导入页")
                     .font(.headline)
                 Spacer()
             }
@@ -33,33 +33,33 @@ struct StampImportView: View {
             Text("这一页先对齐规范后的导入链路：导入、自动规范化、必要时手动裁切、再设定真实尺寸。")
                 .foregroundStyle(.secondary)
 
-            Button("閫夋嫨鍗扮珷鍥剧墖") {
+            Button("选择印章图片") {
                 isShowingImporter = true
             }
             .buttonStyle(.bordered)
             .disabled(isProcessing)
 
-            TextField("鍗扮珷鍚嶇О锛堥粯璁ゅ彇鏂囦欢鍚嶏級", text: $stampName)
+            TextField("印章名称（默认使用文件名）", text: $stampName)
                 .textFieldStyle(.roundedBorder)
                 .disabled(isProcessing)
 
             Stepper(value: $targetSizeMM, in: 5...80, step: 0.5) {
-                Text("鐩爣鐪熷疄灏哄锛\(targetSizeMM, specifier: "%.1f") mm")
+                Text("目标真实尺寸：\(targetSizeMM, specifier: "%.1f") mm")
             }
             .disabled(isProcessing)
 
-            Text("褰撳墠绱犳潗姹犲嵃绔犳暟锛\(savedAssetCount)")
+            Text("当前素材池印章数：\(savedAssetCount)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             if let workingAsset {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("绱犳潗鍚嶏細\(workingAsset.name)")
-                    Text("鐘舵€侊細\(workingAsset.normalizationStatus.rawValue)")
-                    Text("鐩爣灏哄锛\(workingAsset.finalPhysicalSizeMM ?? targetSizeMM, specifier: "%.1f") mm")
-                    Text("鏈夋晥杈圭晫锛\(boundsSummary(for: workingAsset))")
-                    Text("瑁佽竟棰勮锛\(boundsSummary(for: manualCropPreview(for: workingAsset)))")
-                    Text("schemaVersion锛\(workingAsset.schemaVersion)")
+                    Text("素材名：\(workingAsset.name)")
+                    Text("状态：\(workingAsset.normalizationStatus.rawValue)")
+                    Text("目标尺寸：\(workingAsset.finalPhysicalSizeMM ?? targetSizeMM, specifier: "%.1f") mm")
+                    Text("有效边界：\(boundsSummary(for: workingAsset))")
+                    Text("裁边预览：\(boundsSummary(for: manualCropPreview(for: workingAsset)))")
+                    Text("schemaVersion：\(workingAsset.schemaVersion)")
                 }
                 .font(.subheadline)
                 .padding()
@@ -78,7 +78,7 @@ struct StampImportView: View {
                 .buttonStyle(.bordered)
                 .disabled(isProcessing || workingAsset == nil)
 
-                Button("鎵嬪姩寰皟瑁佽竟") {
+                Button("手动微调裁边") {
                     Task {
                         await applyManualCropAdjustment()
                     }
@@ -86,7 +86,7 @@ struct StampImportView: View {
                 .buttonStyle(.bordered)
                 .disabled(isProcessing || workingAsset == nil)
 
-                Button("淇濆瓨鍗扮珷绱犳潗") {
+                Button("保存印章素材") {
                     Task {
                         await finalizeAndSaveStamp()
                     }
@@ -96,7 +96,7 @@ struct StampImportView: View {
             }
 
             if isProcessing {
-                ProgressView("澶勭悊涓?..")
+                ProgressView("处理中...")
                     .font(.caption)
             }
 
@@ -301,31 +301,31 @@ struct StampImportView: View {
         let maxBottom = max(sourceBounds.height - 1, 0)
 
         VStack(alignment: .leading, spacing: 8) {
-            Text("鎵嬪姩瑁佽竟鍙傛暟锛堝儚绱狅級")
+            Text("手动裁边参数（像素）")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             Stepper(value: $cropInsetLeftPX, in: 0...maxLeft, step: 1) {
-                Text("宸﹀唴缂╋細\(Int(cropInsetLeftPX))")
+                Text("左内缩：\(Int(cropInsetLeftPX))")
             }
             .disabled(isProcessing)
 
             Stepper(value: $cropInsetTopPX, in: 0...maxTop, step: 1) {
-                Text("涓婂唴缂╋細\(Int(cropInsetTopPX))")
+                Text("上内缩：\(Int(cropInsetTopPX))")
             }
             .disabled(isProcessing)
 
             Stepper(value: $cropInsetRightPX, in: 0...maxRight, step: 1) {
-                Text("鍙冲唴缂╋細\(Int(cropInsetRightPX))")
+                Text("右内缩：\(Int(cropInsetRightPX))")
             }
             .disabled(isProcessing)
 
             Stepper(value: $cropInsetBottomPX, in: 0...maxBottom, step: 1) {
-                Text("涓嬪唴缂╋細\(Int(cropInsetBottomPX))")
+                Text("下内缩：\(Int(cropInsetBottomPX))")
             }
             .disabled(isProcessing)
 
-            Button("閲嶇疆瑁佽竟鍙傛暟") {
+            Button("重置裁边参数") {
                 resetCropInsets()
             }
             .buttonStyle(.bordered)

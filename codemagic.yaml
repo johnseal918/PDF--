@@ -31,10 +31,43 @@ workflows:
           fi
 
   ios_smoke_build:
-    name: iOS Smoke Build (Manual)
+    name: iOS Tiered Smoke Build (Manual)
     max_build_duration: 20
     instance_type: mac_mini_m2
+    environment:
+      vars:
+        # Build tier policy:
+        # - compile_only: compile only, lowest minute usage (default)
+        # - smoke_tests: compile + unit tests, for module-batch closure
+        # - pre_release: compile + tests + stricter log output (reserved for release window)
+        BUILD_TIER: compile_only
+        # Optional free-text reason for audit logs, e.g. "M2 signature batch closure"
+        BUILD_REASON: ""
     scripts:
+      - name: Build governance preflight
+        script: |
+          set -e
+          echo "===== Build Governance ====="
+          echo "Workflow: iOS Tiered Smoke Build (Manual)"
+          echo "BUILD_TIER=${BUILD_TIER}"
+          echo "BUILD_REASON=${BUILD_REASON}"
+          echo ""
+          echo "Cloud build should be triggered only when:"
+          echo "1) A module batch is closed"
+          echo "2) A milestone is ready for verification"
+          echo "3) User explicitly requests immediate validation"
+          echo ""
+          case "${BUILD_TIER}" in
+            compile_only|smoke_tests|pre_release)
+              echo "Tier accepted: ${BUILD_TIER}"
+              ;;
+            *)
+              echo "Unsupported BUILD_TIER: ${BUILD_TIER}"
+              echo "Use one of: compile_only, smoke_tests, pre_release"
+              exit 1
+              ;;
+          esac
+          echo "===== End Governance ====="
       - name: Verify XcodeGen spec exists
         script: |
           set -e
@@ -98,6 +131,11 @@ workflows:
       - name: Run unit tests on iOS Simulator
         script: |
           set -e
+          if [ "${BUILD_TIER}" = "compile_only" ]; then
+            echo "BUILD_TIER=compile_only, skip tests to save CI minutes."
+            exit 0
+          fi
+
           cd iOS/app
 
           SIMULATOR_NAME=$(xcrun simctl list devices available \
@@ -132,6 +170,13 @@ workflows:
           echo "===== Test tail (last 120 lines) ====="
           tail -n 120 xcodebuild-test.log || true
           echo "===== End test tail ====="
+
+          if [ "${BUILD_TIER}" = "pre_release" ]; then
+            echo ""
+            echo "===== Pre-release diagnostics ====="
+            grep -n "warning:" xcodebuild-test.log | tail -n 200 || true
+            echo "===== End pre-release diagnostics ====="
+          fi
 
           if [ "${TEST_EXIT_CODE}" -ne 0 ]; then
             echo ""

@@ -53,6 +53,7 @@ final class FilePDFExportService: PDFExportService {
 
         let pdfDocumentsByPath = buildPDFDocumentCache(for: session.document)
         let stampAssetsByID = loadStampAssetsByID()
+        let signatureAssetsByID = loadSignatureAssetsByID()
 
         do {
             try renderer.writePDF(to: fileURL) { context in
@@ -70,7 +71,8 @@ final class FilePDFExportService: PDFExportService {
                         in: pageBounds,
                         session: session,
                         pdfDocumentsByPath: pdfDocumentsByPath,
-                        stampAssetsByID: stampAssetsByID
+                        stampAssetsByID: stampAssetsByID,
+                        signatureAssetsByID: signatureAssetsByID
                     )
                 }
             }
@@ -86,7 +88,8 @@ final class FilePDFExportService: PDFExportService {
         in bounds: CGRect,
         session: EditorSession,
         pdfDocumentsByPath: [String: PDFDocument],
-        stampAssetsByID: [UUID: StampAsset]
+        stampAssetsByID: [UUID: StampAsset],
+        signatureAssetsByID: [UUID: SignatureAsset]
     ) {
         UIColor.white.setFill()
         UIRectFill(bounds)
@@ -125,7 +128,7 @@ final class FilePDFExportService: PDFExportService {
             if let stamp = object.stampPlacement {
                 drawStamp(stamp, asset: stampAssetsByID[stamp.assetID])
             } else if let signature = object.signaturePlacement {
-                drawSignature(signature)
+                drawSignature(signature, asset: signatureAssetsByID[signature.assetID])
             }
         }
     }
@@ -301,18 +304,40 @@ final class FilePDFExportService: PDFExportService {
         return record.cropBounds
     }
 
-    private func drawSignature(_ signature: SignaturePlacement) {
-        let point = CGPoint(
+    private func drawSignature(_ signature: SignaturePlacement, asset: SignatureAsset?) {
+        let rect = CGRect(
             x: signature.originXMM * A4Measurement.pointsPerMillimeter,
-            y: signature.originYMM * A4Measurement.pointsPerMillimeter
+            y: signature.originYMM * A4Measurement.pointsPerMillimeter,
+            width: signature.widthMM * A4Measurement.pointsPerMillimeter,
+            height: signature.heightMM * A4Measurement.pointsPerMillimeter
         )
+
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
+
+        context.saveGState()
+        context.setAlpha(signature.opacity)
+        context.translateBy(x: rect.midX, y: rect.midY)
+        context.rotate(by: CGFloat(signature.rotation * .pi / 180.0))
+        context.translateBy(x: -rect.midX, y: -rect.midY)
+
+        if
+            let asset,
+            let signatureImage = renderedSignatureImage(for: asset)
+        {
+            signatureImage.draw(in: rect)
+            context.restoreGState()
+            return
+        }
 
         drawText(
             "签名",
-            at: point,
+            at: CGPoint(x: rect.minX, y: rect.minY),
             font: .italicSystemFont(ofSize: max(signature.heightMM * A4Measurement.pointsPerMillimeter * 0.45, 12)),
             color: UIColor.label.withAlphaComponent(signature.opacity * 0.8)
         )
+        context.restoreGState()
     }
 
     private func drawText(
@@ -390,9 +415,65 @@ final class FilePDFExportService: PDFExportService {
         return assetsByID
     }
 
+    private func loadSignatureAssetsByID() -> [UUID: SignatureAsset] {
+        guard let rootDirectory = try? signaturesRootDirectory() else {
+            return [:]
+        }
+
+        guard fileManager.fileExists(atPath: rootDirectory.path) else {
+            return [:]
+        }
+
+        let directories = (try? fileManager.contentsOfDirectory(
+            at: rootDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+
+        var assetsByID: [UUID: SignatureAsset] = [:]
+        for directory in directories {
+            let signatureFileURL = directory.appendingPathComponent("signature.json", isDirectory: false)
+            guard fileManager.fileExists(atPath: signatureFileURL.path) else {
+                continue
+            }
+
+            guard
+                let data = try? Data(contentsOf: signatureFileURL),
+                let asset = try? decoder.decode(SignatureAsset.self, from: data)
+            else {
+                continue
+            }
+
+            assetsByID[asset.id] = asset
+        }
+
+        return assetsByID
+    }
+
+    private func preferredSignatureImagePath(for asset: SignatureAsset) -> String? {
+        if let normalizedPath = asset.normalizedTransparentImagePath, !normalizedPath.isEmpty {
+            return normalizedPath
+        }
+
+        return asset.originalSignaturePath.isEmpty ? nil : asset.originalSignaturePath
+    }
+
+    private func renderedSignatureImage(for asset: SignatureAsset) -> UIImage? {
+        guard let imagePath = preferredSignatureImagePath(for: asset) else {
+            return nil
+        }
+
+        return UIImage(contentsOfFile: imagePath)
+    }
+
     private func stampsRootDirectory() throws -> URL {
         let applicationSupportDirectory = try appSupportDirectory()
         return applicationSupportDirectory.appendingPathComponent("Stamps", isDirectory: true)
+    }
+
+    private func signaturesRootDirectory() throws -> URL {
+        let applicationSupportDirectory = try appSupportDirectory()
+        return applicationSupportDirectory.appendingPathComponent("Signatures", isDirectory: true)
     }
 
     private func appSupportDirectory() throws -> URL {

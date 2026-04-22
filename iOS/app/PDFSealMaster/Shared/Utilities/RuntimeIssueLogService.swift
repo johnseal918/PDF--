@@ -10,6 +10,7 @@ enum IssueLogLevel: String, Sendable {
 enum IssueLogCategory: String, Sendable {
     case documentImport = "document.import"
     case stampImport = "stamp.import"
+    case signatureImport = "signature.import"
     case draftRecovery = "draft.recovery"
     case draftSave = "draft.save"
     case export = "export"

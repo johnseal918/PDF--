@@ -8,6 +8,7 @@ struct EditorView: View {
         session: EditorSession,
         draftRecoveryService: DraftRecoveryService,
         stampAssetService: StampAssetService,
+        signatureAssetService: SignatureAssetService,
         pdfExportService: PDFExportService,
         issueLogService: IssueLogService,
         onBack: @escaping () -> Void
@@ -17,6 +18,7 @@ struct EditorView: View {
                 session: session,
                 draftRecoveryService: draftRecoveryService,
                 stampAssetService: stampAssetService,
+                signatureAssetService: signatureAssetService,
                 pdfExportService: pdfExportService,
                 issueLogService: issueLogService
             )
@@ -34,13 +36,13 @@ struct EditorView: View {
         }
         .background(Color(.systemBackground))
         .task {
-            await viewModel.loadStampAssets()
+            await viewModel.loadEditorAssets()
         }
     }
 
     private var header: some View {
         HStack {
-            Button("杩斿洖", action: onBack)
+            Button("返回", action: onBack)
 
             Spacer()
 
@@ -56,13 +58,13 @@ struct EditorView: View {
 
             Spacer()
 
-            Button("淇濆瓨鑽夌") {
+            Button("保存草稿") {
                 Task {
                     await viewModel.saveDraft()
                 }
             }
 
-            Button("瀵煎嚭 PDF") {
+            Button("导出 PDF") {
                 Task {
                     await viewModel.exportPDF()
                 }
@@ -71,7 +73,7 @@ struct EditorView: View {
 
             if let exportURL = viewModel.lastExportURL {
                 ShareLink(item: exportURL) {
-                    Text("鍒嗕韩")
+                    Text("分享")
                 }
             }
         }
@@ -84,19 +86,19 @@ struct EditorView: View {
                 .fill(Color(.secondarySystemBackground))
                 .overlay(
                     VStack(spacing: 10) {
-                        Text("A4 缁熶竴鐢诲竷")
+                        Text("A4 统一画布")
                             .font(.headline)
 
-                        Text("褰撳墠椤靛璞℃暟锛\(viewModel.currentPageObjectCount)")
+                        Text("当前页对象数：\(viewModel.currentPageObjectCount)")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        Text("棰勮妯″紡锛\(viewModel.document.previewMode.displayName)")
+                        Text("预览模式：\(viewModel.document.previewMode.displayName)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
                         if viewModel.currentPageObjects.isEmpty {
-                            Text("当前页还没有印章对象。")
+                            Text("当前页还没有印章或签名对象。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
@@ -115,12 +117,12 @@ struct EditorView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("褰撳墠鍗扮珷锛\(viewModel.selectedStampName)")
+                    Text("当前印章：\(viewModel.selectedStampName)")
                         .font(.footnote.weight(.medium))
 
                     Spacer()
 
-                    Button("鍒囨崲鍗扮珷") {
+                    Button("切换印章") {
                         viewModel.cycleSelectedStampAsset()
                     }
                     .font(.caption)
@@ -128,32 +130,64 @@ struct EditorView: View {
                     .disabled(viewModel.availableStampCount <= 1)
                 }
 
-                Text("绱犳潗姹犳暟閲忥細\(viewModel.availableStampCount)")
+                Text("素材池数量：\(viewModel.availableStampCount)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("褰撳墠閫変腑锛\(viewModel.selectedObjectSummary)")
+                HStack {
+                    Text("当前签名：\(viewModel.selectedSignatureName)")
+                        .font(.footnote.weight(.medium))
+
+                    Spacer()
+
+                    Button("切换签名") {
+                        viewModel.cycleSelectedSignatureAsset()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.availableSignatureCount <= 1)
+
+                    Button("刷新签名") {
+                        Task {
+                            await viewModel.refreshSignatureAssetsForEditor()
+                        }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                }
+
+                Text("签名素材数量：\(viewModel.availableSignatureCount)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("瀵煎嚭鐘舵€侊細\(viewModel.exportStatusMessage)")
+                Text("签名同步：\(viewModel.signatureSyncStatusMessage)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                missingSignatureRepairPanel
+
+                Text("当前选中：\(viewModel.selectedObjectSummary)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("瀵煎嚭缁嗚妭锛\(viewModel.exportDetailMessage)")
+                Text("导出状态：\(viewModel.exportStatusMessage)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("导出细节：\(viewModel.exportDetailMessage)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
                 if viewModel.isExportingPDF {
-                    ProgressView("姝ｅ湪鐢熸垚瀵煎嚭鏂囦欢...")
+                    ProgressView("正在生成导出文件...")
                         .font(.caption)
                 }
 
-                Text("鑽夌鐘舵€侊細\(viewModel.draftStatusMessage)")
+                Text("草稿状态：\(viewModel.draftStatusMessage)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("这一版先把普通盖章对象链路接通，后续继续接 PDFKit 预览、拖拽缩放和底部抽屉参数面板。")
+                Text("本轮已接入签名素材链路，后续继续完善骑缝章与统一尺寸能力。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -169,6 +203,12 @@ struct EditorView: View {
                         .padding(.horizontal)
                         .padding(.top, 4)
                 }
+
+                if let selectedSignature = viewModel.selectedSignaturePlacement {
+                    signatureParameterPanel(for: selectedSignature)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -179,13 +219,15 @@ struct EditorView: View {
             toolbarItem(title: "上一页") {
                 viewModel.goToPreviousPage()
             }
-            toolbarItem(title: "棰勮") {
+            toolbarItem(title: "预览") {
                 viewModel.togglePreviewMode()
             }
-            toolbarItem(title: "鍗扮珷") {
+            toolbarItem(title: "印章") {
                 viewModel.insertSelectedStamp()
             }
-            toolbarItem(title: "绛惧悕") {}
+            toolbarItem(title: "签名") {
+                viewModel.insertSelectedSignature()
+            }
             toolbarItem(title: "骑缝章") {}
             toolbarItem(title: "下一页") {
                 viewModel.goToNextPage()
@@ -194,6 +236,57 @@ struct EditorView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .background(Color(.tertiarySystemBackground))
+    }
+
+    private var missingSignatureRepairPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("缺失签名一键处理")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(viewModel.missingSignatureOverviewText)
+                .font(.caption2)
+                .foregroundStyle(viewModel.hasMissingSignaturePlacement ? Color.red : Color.secondary)
+
+            Text(viewModel.signatureRepairTargetText)
+                .font(.caption2)
+                .foregroundStyle(viewModel.selectedSignatureAssetReadyForRepair ? Color.secondary : Color.orange)
+
+            HStack(spacing: 8) {
+                Button("定位处理") {
+                    Task {
+                        await viewModel.focusFirstMissingSignaturePlacement()
+                    }
+                }
+                .font(.caption2)
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.canLocateMissingSignaturePlacement)
+
+                Button("本页替换") {
+                    Task {
+                        await viewModel.replaceMissingSignaturesOnActivePage()
+                    }
+                }
+                .font(.caption2)
+                .buttonStyle(.borderedProminent)
+                .disabled(!viewModel.canBulkReplaceMissingSignaturesOnActivePage)
+
+                Button("全局替换") {
+                    Task {
+                        await viewModel.replaceAllMissingSignaturePlacements()
+                    }
+                }
+                .font(.caption2)
+                .buttonStyle(.borderedProminent)
+                .disabled(!viewModel.canBulkReplaceMissingSignatures)
+            }
+
+            Text("最近回执：\(viewModel.signatureReplaceReceiptMessage)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func toolbarItem(title: String, action: @escaping () -> Void) -> some View {
@@ -212,33 +305,33 @@ struct EditorView: View {
 
     private var objectAdjustmentPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("鍩虹寰皟")
+            Text("基础微调")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
-                adjustmentButton("涓婄Щ") {
+                adjustmentButton("上移") {
                     viewModel.moveSelectedObject(deltaXMM: 0, deltaYMM: -1)
                 }
-                adjustmentButton("涓嬬Щ") {
+                adjustmentButton("下移") {
                     viewModel.moveSelectedObject(deltaXMM: 0, deltaYMM: 1)
                 }
-                adjustmentButton("宸︾Щ") {
+                adjustmentButton("左移") {
                     viewModel.moveSelectedObject(deltaXMM: -1, deltaYMM: 0)
                 }
-                adjustmentButton("鍙崇Щ") {
+                adjustmentButton("右移") {
                     viewModel.moveSelectedObject(deltaXMM: 1, deltaYMM: 0)
                 }
             }
 
             HStack(spacing: 8) {
-                adjustmentButton("缂╁皬") {
+                adjustmentButton("缩小") {
                     viewModel.resizeSelectedStamp(deltaMM: -1)
                 }
-                adjustmentButton("鏀惧ぇ") {
+                adjustmentButton("放大") {
                     viewModel.resizeSelectedStamp(deltaMM: 1)
                 }
-                adjustmentButton("鍒犻櫎") {
+                adjustmentButton("删除") {
                     viewModel.deleteSelectedObject()
                 }
             }
@@ -249,7 +342,7 @@ struct EditorView: View {
 
     private func parameterPanel(for stamp: StampPlacement) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("鍙傛暟闈㈡澘")
+            Text("参数面板")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -284,6 +377,68 @@ struct EditorView: View {
             parameterRow(
                 title: "透明度",
                 value: "\(String(format: "%.2f", stamp.opacity))",
+                minusAction: { viewModel.adjustSelectedStampOpacity(delta: -0.05) },
+                plusAction: { viewModel.adjustSelectedStampOpacity(delta: 0.05) }
+            )
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func signatureParameterPanel(for signature: SignaturePlacement) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("签名参数")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text("当前素材：\(viewModel.selectedSignaturePlacementAssetName)")
+                .font(.caption2)
+                .foregroundStyle(viewModel.selectedSignaturePlacementAssetMissing ? Color.red : Color.secondary)
+
+            Text("替换目标：\(viewModel.selectedSignatureName)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Button("用当前签名替换此对象") {
+                Task {
+                    await viewModel.replaceSelectedSignatureAsset()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .font(.caption)
+            .disabled(!viewModel.canQuickReplaceSelectedSignature)
+
+            parameterRow(
+                title: "X",
+                value: "\(String(format: "%.1f", signature.originXMM)) mm",
+                minusAction: { viewModel.moveSelectedObject(deltaXMM: -1, deltaYMM: 0) },
+                plusAction: { viewModel.moveSelectedObject(deltaXMM: 1, deltaYMM: 0) }
+            )
+
+            parameterRow(
+                title: "Y",
+                value: "\(String(format: "%.1f", signature.originYMM)) mm",
+                minusAction: { viewModel.moveSelectedObject(deltaXMM: 0, deltaYMM: -1) },
+                plusAction: { viewModel.moveSelectedObject(deltaXMM: 0, deltaYMM: 1) }
+            )
+
+            parameterRow(
+                title: "宽",
+                value: "\(String(format: "%.1f", signature.widthMM)) mm",
+                minusAction: { viewModel.adjustSelectedStampWidth(deltaMM: -1) },
+                plusAction: { viewModel.adjustSelectedStampWidth(deltaMM: 1) }
+            )
+
+            parameterRow(
+                title: "高",
+                value: "\(String(format: "%.1f", signature.heightMM)) mm",
+                minusAction: { viewModel.adjustSelectedStampHeight(deltaMM: -1) },
+                plusAction: { viewModel.adjustSelectedStampHeight(deltaMM: 1) }
+            )
+
+            parameterRow(
+                title: "透明度",
+                value: "\(String(format: "%.2f", signature.opacity))",
                 minusAction: { viewModel.adjustSelectedStampOpacity(delta: -0.05) },
                 plusAction: { viewModel.adjustSelectedStampOpacity(delta: 0.05) }
             )
@@ -336,7 +491,7 @@ struct EditorView: View {
                     .multilineTextAlignment(.leading)
                 Spacer()
                 if object.isSelected {
-                    Text("宸查€変腑")
+                    Text("已选中")
                         .font(.caption2)
                         .foregroundStyle(Color.accentColor)
                 }
@@ -358,16 +513,26 @@ struct EditorView: View {
     private func objectSummaryText(_ object: EditorObject) -> some View {
         if let stamp = object.stampPlacement {
             Text(
-                "鍗扮珷 路 绗琝(stamp.pageIndex + 1)椤?路 浣嶇疆 \(String(format: "%.1f", stamp.originXMM)), \(String(format: "%.1f", stamp.originYMM)) mm 路 灏哄 \(String(format: "%.1f", stamp.widthMM)) 脳 \(String(format: "%.1f", stamp.heightMM)) mm"
+                "印章 · 第\(stamp.pageIndex + 1)页 · 位置 \(String(format: "%.1f", stamp.originXMM)), \(String(format: "%.1f", stamp.originYMM)) mm · 尺寸 \(String(format: "%.1f", stamp.widthMM)) × \(String(format: "%.1f", stamp.heightMM)) mm"
             )
             .font(.caption2)
             .foregroundStyle(.secondary)
         } else if let signature = object.signaturePlacement {
-            Text(
-                "绛惧悕 路 绗琝(signature.pageIndex + 1)椤?路 浣嶇疆 \(String(format: "%.1f", signature.originXMM)), \(String(format: "%.1f", signature.originYMM)) mm 路 灏哄 \(String(format: "%.1f", signature.widthMM)) 脳 \(String(format: "%.1f", signature.heightMM)) mm"
-            )
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(
+                    "签名 · 第\(signature.pageIndex + 1)页 · 位置 \(String(format: "%.1f", signature.originXMM)), \(String(format: "%.1f", signature.originYMM)) mm · 尺寸 \(String(format: "%.1f", signature.widthMM)) x \(String(format: "%.1f", signature.heightMM)) mm"
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+                Text(
+                    viewModel.isSignatureAssetMissing(assetID: signature.assetID)
+                        ? "素材状态：缺失"
+                        : "素材状态：\(viewModel.signatureAssetDisplayName(for: signature.assetID))"
+                )
+                .font(.caption2)
+                .foregroundStyle(viewModel.isSignatureAssetMissing(assetID: signature.assetID) ? Color.red : Color.secondary)
+            }
         }
     }
 }

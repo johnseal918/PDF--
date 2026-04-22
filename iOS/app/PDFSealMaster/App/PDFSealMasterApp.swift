@@ -8,6 +8,7 @@ struct PDFSealMasterApp: App {
     private let documentService: DocumentService = DefaultDocumentService()
     private let draftRecoveryService: DraftRecoveryService = FileDraftRecoveryService()
     private let stampAssetService: StampAssetService = FileStampAssetService()
+    private let signatureAssetService: SignatureAssetService = FileSignatureAssetService()
     private let pdfExportService: PDFExportService = FilePDFExportService()
     private let issueLogService: IssueLogService = FileIssueLogService()
 
@@ -19,6 +20,7 @@ struct PDFSealMasterApp: App {
                 documentService: documentService,
                 draftRecoveryService: draftRecoveryService,
                 stampAssetService: stampAssetService,
+                signatureAssetService: signatureAssetService,
                 pdfExportService: pdfExportService,
                 issueLogService: issueLogService
             )

@@ -8,6 +8,7 @@ struct HomeView: View {
     let documentService: DocumentService
     let draftRecoveryService: DraftRecoveryService
     let stampAssetService: StampAssetService
+    let signatureAssetService: SignatureAssetService
     let pdfExportService: PDFExportService
     let issueLogService: IssueLogService
 
@@ -19,6 +20,8 @@ struct HomeView: View {
     @State private var isShowingImageFileImporter = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var importStatusMessage: String?
+    @State private var draftActionMessage: String?
+    @State private var pendingDraftDeletion: DraftSnapshotSummary?
 
     var body: some View {
         NavigationStack {
@@ -31,6 +34,7 @@ struct HomeView: View {
                         session: session,
                         draftRecoveryService: draftRecoveryService,
                         stampAssetService: stampAssetService,
+                        signatureAssetService: signatureAssetService,
                         pdfExportService: pdfExportService,
                         issueLogService: issueLogService,
                         onBack: {
@@ -44,6 +48,16 @@ struct HomeView: View {
                     StampImportView(
                         stampAssetService: stampAssetService,
                         issueLogService: issueLogService,
+                        onClose: { router.showHome() }
+                    )
+                case .signaturePad:
+                    SignaturePadView(
+                        signatureAssetService: signatureAssetService,
+                        draftRecoveryService: draftRecoveryService,
+                        issueLogService: issueLogService,
+                        onOpenDraft: { documentID in
+                            await openDraftFromSignaturePad(documentID)
+                        },
                         onClose: { router.showHome() }
                     )
                 }
@@ -79,6 +93,18 @@ struct HomeView: View {
                 await handleImageFileImport(result)
             }
         }
+        .alert(item: $pendingDraftDeletion) { summary in
+            Alert(
+                title: Text("删除草稿"),
+                message: Text("确认删除草稿「\(summary.documentName)」吗？"),
+                primaryButton: .destructive(Text("删除")) {
+                    Task {
+                        await deleteDraft(summary)
+                    }
+                },
+                secondaryButton: .cancel(Text("取消"))
+            )
+        }
     }
 
     private var homeContent: some View {
@@ -86,7 +112,7 @@ struct HomeView: View {
             Text("iPhone 首发版已启动")
                 .font(.title2.weight(.semibold))
 
-            Text("当前先跑通主链路：导入文档、A4 归一化、印章规范化、普通盖章、草稿恢复、PDF 导出。")
+            Text("当前阶段：已跑通 M1，并进入 M2（签名素材与恢复完善）。")
                 .font(.body)
                 .foregroundStyle(.secondary)
 
@@ -104,18 +130,28 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
 
             if let latestDraftSession {
-                Text("鏈€杩戣崏绋匡細\(latestDraftSession.document.name)")
+                Text("最近草稿：\(latestDraftSession.document.name)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Button("瀵煎叆 PDF锛堟枃浠讹級") {
+            if let draftActionMessage {
+                Text(draftActionMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !draftSummaries.isEmpty {
+                recentDraftsSection
+            }
+
+            Button("导入 PDF（文件）") {
                 isShowingPDFImporter = true
             }
             .buttonStyle(.bordered)
             .disabled(isImportingDocument)
 
-            Button("瀵煎叆鍥剧墖锛堟枃浠讹級") {
+            Button("导入图片（文件）") {
                 isShowingImageFileImporter = true
             }
             .buttonStyle(.bordered)
@@ -126,20 +162,26 @@ struct HomeView: View {
                 maxSelectionCount: 10,
                 matching: .images
             ) {
-                Text("瀵煎叆鍥剧墖锛堢浉鍐岋級")
+                Text("导入图片（相册）")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .disabled(isImportingDocument)
 
-            Button("杩涘叆鍗扮珷瀵煎叆楠ㄦ灦") {
+            Button("进入印章导入页") {
                 router.showStampImport()
             }
             .buttonStyle(.bordered)
             .disabled(isImportingDocument)
 
+            Button("进入手写签名页") {
+                router.showSignaturePad()
+            }
+            .buttonStyle(.bordered)
+            .disabled(isImportingDocument)
+
             if isImportingDocument {
-                ProgressView("姝ｅ湪瀵煎叆...")
+                ProgressView("正在导入...")
                     .font(.caption)
             }
 
@@ -160,10 +202,53 @@ struct HomeView: View {
         }
 
         if let latestDraftSession {
-            return "发现 \(draftSummaries.count) 份草稿，可以继续最近一次编辑。"
+            return "发现 \(draftSummaries.count) 份草稿，可继续最近一次或从列表选择。"
         }
 
         return "当前没有可恢复的草稿。"
+    }
+
+    private var recentDraftsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("最近草稿")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(Array(draftSummaries.prefix(5)), id: \.id) { summary in
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(summary.documentName)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                        Text("更新：\(summary.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("页数：\(summary.pageCount)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button("继续") {
+                        Task {
+                            await continueWithDraft(summary)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+                    .disabled(isLoadingDraft || isImportingDocument)
+
+                    Button("删除") {
+                        pendingDraftDeletion = summary
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+                    .disabled(isLoadingDraft || isImportingDocument)
+                }
+                .padding(10)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
     }
 
     private func refreshLatestDraft() async {
@@ -185,13 +270,122 @@ struct HomeView: View {
         } catch {
             draftSummaries = []
             await issueLogService.recordError(
-                "鍔犺浇鑽夌鎽樿澶辫触",
+                "加载草稿摘要失败",
                 error: error,
                 category: .draftRecovery,
                 context: ["scope": "loadDraftSummaries"]
             )
         }
         isLoadingDraft = false
+    }
+
+    private func continueWithDraft(_ summary: DraftSnapshotSummary) async {
+        isLoadingDraft = true
+        defer { isLoadingDraft = false }
+
+        do {
+            guard let session = try await draftRecoveryService.restoreDraft(for: summary.documentID) else {
+                draftActionMessage = "草稿不存在或已失效，已刷新草稿列表。"
+                await issueLogService.recordFeedback(
+                    "草稿不存在，刷新列表",
+                    category: .draftRecovery,
+                    context: [
+                        "documentID": summary.documentID.uuidString,
+                        "documentName": summary.documentName
+                    ]
+                )
+                await refreshLatestDraft()
+                return
+            }
+
+            draftActionMessage = "已恢复草稿：\(summary.documentName)"
+            latestDraftSession = session
+            await issueLogService.recordFeedback(
+                "草稿恢复成功（从列表）",
+                category: .draftRecovery,
+                context: [
+                    "documentID": summary.documentID.uuidString,
+                    "documentName": summary.documentName
+                ]
+            )
+            router.showEditor(session: session)
+        } catch {
+            draftActionMessage = "恢复草稿失败，请重试。"
+            await issueLogService.recordError(
+                "草稿恢复失败（从列表）",
+                error: error,
+                category: .draftRecovery,
+                context: [
+                    "documentID": summary.documentID.uuidString,
+                    "documentName": summary.documentName
+                ]
+            )
+            await refreshLatestDraft()
+        }
+    }
+
+    private func openDraftFromSignaturePad(_ documentID: UUID) async -> Bool {
+        do {
+            guard let session = try await draftRecoveryService.restoreDraft(for: documentID) else {
+                draftActionMessage = "引用草稿不存在或已失效，已刷新草稿列表。"
+                await issueLogService.recordFeedback(
+                    "从签名引用跳转草稿失败：草稿不存在",
+                    category: .draftRecovery,
+                    context: ["documentID": documentID.uuidString]
+                )
+                await refreshLatestDraft()
+                return false
+            }
+
+            latestDraftSession = session
+            draftActionMessage = "已从签名引用跳转：\(session.document.name)"
+            await issueLogService.recordFeedback(
+                "从签名引用跳转草稿成功",
+                category: .draftRecovery,
+                context: [
+                    "documentID": session.document.id.uuidString,
+                    "documentName": session.document.name
+                ]
+            )
+            router.showEditor(session: session)
+            return true
+        } catch {
+            draftActionMessage = "跳转草稿失败，请重试。"
+            await issueLogService.recordError(
+                "从签名引用跳转草稿失败",
+                error: error,
+                category: .draftRecovery,
+                context: ["documentID": documentID.uuidString]
+            )
+            return false
+        }
+    }
+
+    private func deleteDraft(_ summary: DraftSnapshotSummary) async {
+        do {
+            try await draftRecoveryService.clearDraft(for: summary.documentID)
+            draftActionMessage = "已删除草稿：\(summary.documentName)"
+            await issueLogService.recordFeedback(
+                "草稿删除成功",
+                category: .draftRecovery,
+                context: [
+                    "documentID": summary.documentID.uuidString,
+                    "documentName": summary.documentName
+                ]
+            )
+            await refreshLatestDraft()
+        } catch {
+            draftActionMessage = "删除草稿失败，请重试。"
+            await issueLogService.recordError(
+                "草稿删除失败",
+                error: error,
+                category: .draftRecovery,
+                context: [
+                    "documentID": summary.documentID.uuidString,
+                    "documentName": summary.documentName
+                ]
+            )
+        }
     }
 
     private func openEditor(with document: DocumentModel) async {
@@ -215,7 +409,7 @@ struct HomeView: View {
             )
         } catch {
             await issueLogService.recordError(
-                "鎵撳紑缂栬緫鍣ㄥ墠淇濆瓨鑽夌澶辫触",
+                "打开编辑器前保存草稿失败",
                 error: error,
                 category: .draftSave,
                 context: [

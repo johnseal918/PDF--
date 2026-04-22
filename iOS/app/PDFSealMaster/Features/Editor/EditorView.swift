@@ -338,7 +338,7 @@ struct EditorView: View {
                 if object.isSelected {
                     Text("宸查€変腑")
                         .font(.caption2)
-                        .foregroundStyle(.accent)
+                        .foregroundStyle(Color.accentColor)
                 }
             }
             .padding(.horizontal, 10)

@@ -288,6 +288,10 @@ struct StampImportView: View {
         return "x:\(Int(bounds.x)) y:\(Int(bounds.y)) w:\(Int(bounds.width)) h:\(Int(bounds.height))"
     }
 
+    private func boundsSummary(for bounds: PixelRect) -> String {
+        "x:\(Int(bounds.x)) y:\(Int(bounds.y)) w:\(Int(bounds.width)) h:\(Int(bounds.height))"
+    }
+
     @ViewBuilder
     private func cropControlPanel(for asset: StampAsset) -> some View {
         let sourceBounds = sourceBounds(for: asset)

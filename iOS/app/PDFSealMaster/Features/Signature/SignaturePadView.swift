@@ -403,8 +403,12 @@ struct SignaturePadView: View {
 
     private func deleteSignature(_ asset: SignatureAsset) async {
         do {
-            let usage = signatureUsageByID[asset.id]
-                ?? (try await draftRecoveryService.inspectSignatureAssetUsage(assetID: asset.id))
+            let usage: SignatureAssetUsageSummary
+            if let cachedUsage = signatureUsageByID[asset.id] {
+                usage = cachedUsage
+            } else {
+                usage = try await draftRecoveryService.inspectSignatureAssetUsage(assetID: asset.id)
+            }
 
             if usage.hasReferences {
                 signatureUsageByID[asset.id] = usage

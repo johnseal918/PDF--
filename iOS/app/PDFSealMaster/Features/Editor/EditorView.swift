@@ -187,12 +187,13 @@ struct EditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("本轮已接入签名链路与统一尺寸能力，下一步继续完善骑缝章。")
+                Text("M3 已完成骑缝章与统一尺寸，当前进入 M4：预览判断与实际尺寸检查。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
                 stampSizeSyncPanel
                 bindingStampPanel
+                actualSizeInspectionPanel
             }
             .padding(.horizontal)
 
@@ -224,6 +225,11 @@ struct EditorView: View {
             }
             toolbarItem(title: "预览") {
                 viewModel.togglePreviewMode()
+            }
+            toolbarItem(title: "实尺") {
+                Task {
+                    await viewModel.toggleActualSizeInspection()
+                }
             }
             toolbarItem(title: "印章") {
                 viewModel.insertSelectedStamp()
@@ -437,6 +443,32 @@ struct EditorView: View {
             Text("执行结果：\(viewModel.bindingStampStatusMessage)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var actualSizeInspectionPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("实际尺寸检查")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(viewModel.actualSizeInspectionStatusText)
+                .font(.caption2)
+                .foregroundStyle(viewModel.actualSizeInspectionIsWarning ? Color.orange : Color.secondary)
+
+            Text(viewModel.actualSizeInspectionDetailText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Button(viewModel.isActualSizeInspectionEnabled ? "关闭检查" : "启用检查") {
+                Task {
+                    await viewModel.toggleActualSizeInspection()
+                }
+            }
+            .buttonStyle(.bordered)
+            .font(.caption2)
         }
         .padding(10)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))

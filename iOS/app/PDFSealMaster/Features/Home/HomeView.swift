@@ -112,7 +112,7 @@ struct HomeView: View {
             Text("iPhone 首发版已启动")
                 .font(.title2.weight(.semibold))
 
-            Text("当前阶段：已跑通 M1，并进入 M2（签名素材与恢复完善）。")
+            Text("当前阶段：M3 已收口，正在推进 M4（预览判断与实际尺寸检查）。")
                 .font(.body)
                 .foregroundStyle(.secondary)
 

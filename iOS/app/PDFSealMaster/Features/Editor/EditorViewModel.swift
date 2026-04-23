@@ -16,12 +16,14 @@ final class EditorViewModel: ObservableObject {
     @Published private(set) var signatureReplaceReceiptMessage = "暂无替换回执。"
     @Published private(set) var stampSizeSyncStatusMessage = "统一尺寸未执行。"
     @Published private(set) var bindingStampStatusMessage = "骑缝章未启用。"
+    @Published private(set) var isActualSizeInspectionEnabled = false
 
     private let draftRecoveryService: DraftRecoveryService
     private let stampAssetService: StampAssetService
     private let signatureAssetService: SignatureAssetService
     private let pdfExportService: PDFExportService
     private let bindingStampService: BindingStampService
+    private let actualSizeInspectionService: ActualSizeInspectionService
     private let issueLogService: IssueLogService
     private var autoSaveTask: Task<Void, Never>?
 
@@ -32,7 +34,8 @@ final class EditorViewModel: ObservableObject {
         signatureAssetService: SignatureAssetService,
         pdfExportService: PDFExportService,
         issueLogService: IssueLogService,
-        bindingStampService: BindingStampService = DefaultBindingStampService()
+        bindingStampService: BindingStampService = DefaultBindingStampService(),
+        actualSizeInspectionService: ActualSizeInspectionService = DefaultActualSizeInspectionService()
     ) {
         self.session = session
         self.draftRecoveryService = draftRecoveryService
@@ -40,6 +43,7 @@ final class EditorViewModel: ObservableObject {
         self.signatureAssetService = signatureAssetService
         self.pdfExportService = pdfExportService
         self.bindingStampService = bindingStampService
+        self.actualSizeInspectionService = actualSizeInspectionService
         self.issueLogService = issueLogService
         self.signatureReplaceReceiptMessage = session.signatureReplaceReceiptMessage
         normalizeSelectionForActivePage()
@@ -175,6 +179,63 @@ final class EditorViewModel: ObservableObject {
 
     var canUseSelectedStampForBinding: Bool {
         selectedStampAssetID != nil
+    }
+
+    var actualSizeInspectionStatusText: String {
+        guard isActualSizeInspectionEnabled else {
+            return "未启用实际尺寸检查。"
+        }
+
+        guard let selectedObject else {
+            return "请先选中一个印章或签名对象。"
+        }
+
+        guard let pageSizeMM = activePageSizeMM(for: selectedObject.pageIndex) else {
+            return "当前页尺寸异常，无法检查。"
+        }
+
+        return actualSizeInspectionService.inspect(
+            object: selectedObject,
+            pageSizeMM: pageSizeMM
+        ).headline
+    }
+
+    var actualSizeInspectionDetailText: String {
+        guard isActualSizeInspectionEnabled else {
+            return "启用后会按毫米尺寸检查对象在 A4 纸面上的实际占比。"
+        }
+
+        guard let selectedObject else {
+            return "未选中对象，无法给出尺寸检查详情。"
+        }
+
+        guard let pageSizeMM = activePageSizeMM(for: selectedObject.pageIndex) else {
+            return "当前页尺寸异常，无法生成检查详情。"
+        }
+
+        return actualSizeInspectionService.inspect(
+            object: selectedObject,
+            pageSizeMM: pageSizeMM
+        ).detail
+    }
+
+    var actualSizeInspectionIsWarning: Bool {
+        guard isActualSizeInspectionEnabled else {
+            return false
+        }
+
+        guard let selectedObject else {
+            return true
+        }
+
+        guard let pageSizeMM = activePageSizeMM(for: selectedObject.pageIndex) else {
+            return true
+        }
+
+        return actualSizeInspectionService.inspect(
+            object: selectedObject,
+            pageSizeMM: pageSizeMM
+        ).severity == .warning
     }
 
     var selectedSignatureName: String {
@@ -375,6 +436,19 @@ final class EditorViewModel: ObservableObject {
     func togglePreviewMode() {
         session.document.previewMode = session.document.previewMode == .original ? .matchedLowRes : .original
         touchSession()
+    }
+
+    func toggleActualSizeInspection() async {
+        isActualSizeInspectionEnabled.toggle()
+        await issueLogService.recordFeedback(
+            "实际尺寸检查模式切换",
+            category: .feedback,
+            context: [
+                "documentID": session.document.id.uuidString,
+                "enabled": isActualSizeInspectionEnabled ? "true" : "false",
+                "activePageIndex": String(session.activePageIndex)
+            ]
+        )
     }
 
     func insertSelectedStamp() {
@@ -1113,6 +1187,13 @@ final class EditorViewModel: ObservableObject {
 
     private func refreshSelectionForActivePage() {
         normalizeSelectionForActivePage()
+    }
+
+    private func activePageSizeMM(for pageIndex: Int) -> MillimeterSize? {
+        guard session.document.pages.indices.contains(pageIndex) else {
+            return nil
+        }
+        return session.document.pages[pageIndex].a4CanvasSizePT.asMillimeterSize
     }
 
     private func mutateSelectedObjectPlacement(

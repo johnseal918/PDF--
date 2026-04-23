@@ -339,3 +339,156 @@ workflows:
             echo "===== End test errors ====="
             exit "${TEST_EXIT_CODE}"
           fi
+
+  ios_pre_release_build:
+    name: iOS Pre-Release Build (Manual)
+    max_build_duration: 35
+    instance_type: mac_mini_m2
+    environment:
+      vars:
+        # Dedicated workflow for release-window full regression checks.
+        BUILD_TIER: pre_release
+        BUILD_REASON: manual_pre_release
+    scripts:
+      - name: Build governance preflight
+        script: |
+          set -e
+          echo "===== Build Governance ====="
+          echo "Workflow: iOS Pre-Release Build (Manual)"
+          echo "BUILD_TIER=${BUILD_TIER}"
+          echo "BUILD_REASON=${BUILD_REASON}"
+          echo ""
+          echo "Cloud build should be triggered only when:"
+          echo "1) A release window is opened"
+          echo "2) Milestone closure requires final regression"
+          echo "3) User explicitly requests pre-release verification"
+          echo ""
+          case "${BUILD_TIER}" in
+            compile_only|smoke_tests|pre_release)
+              echo "Tier accepted: ${BUILD_TIER}"
+              ;;
+            *)
+              echo "Unsupported BUILD_TIER: ${BUILD_TIER}"
+              echo "Use one of: compile_only, smoke_tests, pre_release"
+              exit 1
+              ;;
+          esac
+          echo "===== End Governance ====="
+      - name: Verify XcodeGen spec exists
+        script: |
+          set -e
+          test -f iOS/app/project.yml
+          echo "Found iOS/app/project.yml"
+      - name: Generate Xcode project via XcodeGen
+        script: |
+          set -e
+          cd iOS/app
+          if command -v xcodegen >/dev/null 2>&1; then
+            echo "Using preinstalled xcodegen"
+          else
+            echo "xcodegen not found, installing via Homebrew..."
+            brew install xcodegen
+          fi
+          xcodegen --version
+          xcodegen generate
+          xcodebuild -list -project PDFSealMaster.xcodeproj
+      - name: Build for iOS Simulator (unsigned)
+        script: |
+          set -e
+          cd iOS/app
+
+          echo "Build settings snapshot:"
+          xcodebuild -showBuildSettings \
+            -project "PDFSealMaster.xcodeproj" \
+            -scheme "PDFSealMaster" \
+            -sdk iphonesimulator \
+            | grep -E "ARCHS|EXCLUDED_ARCHS|ONLY_ACTIVE_ARCH" \
+            | sort -u || true
+
+          set +e
+          xcodebuild build \
+            -project "PDFSealMaster.xcodeproj" \
+            -scheme "PDFSealMaster" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            'EXCLUDED_ARCHS[sdk=iphonesimulator*]=x86_64' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > xcodebuild.log 2>&1
+
+          BUILD_EXIT_CODE=$?
+          set -e
+          echo ""
+          echo "===== Build tail (last 120 lines) ====="
+          tail -n 120 xcodebuild.log || true
+          echo "===== End build tail ====="
+
+          if [ "${BUILD_EXIT_CODE}" -ne 0 ]; then
+            echo ""
+            echo "===== Extracted compiler errors ====="
+            grep -n "error:" xcodebuild.log | tail -n 200 || true
+            echo "===== End errors ====="
+            exit "${BUILD_EXIT_CODE}"
+          fi
+      - name: Run unit tests on iOS Simulator
+        script: |
+          set -e
+          if [ "${BUILD_TIER}" = "compile_only" ]; then
+            echo "BUILD_TIER=compile_only, skip tests to save CI minutes."
+            exit 0
+          fi
+
+          cd iOS/app
+
+          SIMULATOR_NAME=$(xcrun simctl list devices available \
+            | awk -F '[()]' '/iPhone/ {gsub(/^[ \t]+|[ \t]+$/, "", $1); print $1; exit}')
+
+          if [ -z "${SIMULATOR_NAME}" ]; then
+            echo "No available iPhone simulator device found."
+            exit 1
+          fi
+
+          echo "Using simulator: ${SIMULATOR_NAME}"
+
+          set +e
+          xcodebuild test \
+            -project "PDFSealMaster.xcodeproj" \
+            -scheme "PDFSealMaster" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=${SIMULATOR_NAME}" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            'EXCLUDED_ARCHS[sdk=iphonesimulator*]=x86_64' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > xcodebuild-test.log 2>&1
+
+          TEST_EXIT_CODE=$?
+          set -e
+
+          echo ""
+          echo "===== Test tail (last 120 lines) ====="
+          tail -n 120 xcodebuild-test.log || true
+          echo "===== End test tail ====="
+
+          if [ "${BUILD_TIER}" = "pre_release" ]; then
+            echo ""
+            echo "===== Pre-release diagnostics ====="
+            grep -n "warning:" xcodebuild-test.log | tail -n 200 || true
+            echo "===== End pre-release diagnostics ====="
+          fi
+
+          if [ "${TEST_EXIT_CODE}" -ne 0 ]; then
+            echo ""
+            echo "===== Extracted test errors ====="
+            grep -n "error:" xcodebuild-test.log | tail -n 200 || true
+            grep -n "failed" xcodebuild-test.log | tail -n 200 || true
+            echo "===== End test errors ====="
+            exit "${TEST_EXIT_CODE}"
+          fi

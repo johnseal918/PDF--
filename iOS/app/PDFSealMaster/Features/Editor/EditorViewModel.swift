@@ -24,6 +24,7 @@ final class EditorViewModel: ObservableObject {
     private let pdfExportService: PDFExportService
     private let bindingStampService: BindingStampService
     private let actualSizeInspectionService: ActualSizeInspectionService
+    private let previewModeService: PreviewModeService
     private let issueLogService: IssueLogService
     private var autoSaveTask: Task<Void, Never>?
 
@@ -35,7 +36,8 @@ final class EditorViewModel: ObservableObject {
         pdfExportService: PDFExportService,
         issueLogService: IssueLogService,
         bindingStampService: BindingStampService = DefaultBindingStampService(),
-        actualSizeInspectionService: ActualSizeInspectionService = DefaultActualSizeInspectionService()
+        actualSizeInspectionService: ActualSizeInspectionService = DefaultActualSizeInspectionService(),
+        previewModeService: PreviewModeService = DefaultPreviewModeService()
     ) {
         self.session = session
         self.draftRecoveryService = draftRecoveryService
@@ -44,6 +46,7 @@ final class EditorViewModel: ObservableObject {
         self.pdfExportService = pdfExportService
         self.bindingStampService = bindingStampService
         self.actualSizeInspectionService = actualSizeInspectionService
+        self.previewModeService = previewModeService
         self.issueLogService = issueLogService
         self.signatureReplaceReceiptMessage = session.signatureReplaceReceiptMessage
         normalizeSelectionForActivePage()
@@ -179,6 +182,22 @@ final class EditorViewModel: ObservableObject {
 
     var canUseSelectedStampForBinding: Bool {
         selectedStampAssetID != nil
+    }
+
+    var previewJudgementStatusText: String {
+        previewModeInspectionResult.headline
+    }
+
+    var previewJudgementDetailText: String {
+        previewModeInspectionResult.detail
+    }
+
+    var previewJudgementIsWarning: Bool {
+        previewModeInspectionResult.severity == .warning
+    }
+
+    var previewJudgementScaleText: String {
+        "模拟视觉比例：\(String(format: "%.0f%%", previewModeInspectionResult.simulatedScale * 100))"
     }
 
     var actualSizeInspectionStatusText: String {
@@ -1194,6 +1213,21 @@ final class EditorViewModel: ObservableObject {
             return nil
         }
         return session.document.pages[pageIndex].a4CanvasSizePT.asMillimeterSize
+    }
+
+    private var activePageModel: PageModel? {
+        guard session.document.pages.indices.contains(session.activePageIndex) else {
+            return nil
+        }
+        return session.document.pages[session.activePageIndex]
+    }
+
+    private var previewModeInspectionResult: PreviewJudgementResult {
+        previewModeService.inspect(
+            mode: session.document.previewMode,
+            selectedObject: selectedObject,
+            page: activePageModel
+        )
     }
 
     private func mutateSelectedObjectPlacement(

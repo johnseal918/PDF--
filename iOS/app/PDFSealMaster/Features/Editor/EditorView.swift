@@ -97,6 +97,10 @@ struct EditorView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
+                        Text(viewModel.previewJudgementScaleText)
+                            .font(.caption2)
+                            .foregroundStyle(viewModel.previewJudgementIsWarning ? Color.orange : Color.secondary)
+
                         if viewModel.currentPageObjects.isEmpty {
                             Text("当前页还没有印章或签名对象。")
                                 .font(.caption)
@@ -191,6 +195,7 @@ struct EditorView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                previewJudgementPanel
                 stampSizeSyncPanel
                 bindingStampPanel
                 actualSizeInspectionPanel
@@ -469,6 +474,24 @@ struct EditorView: View {
             }
             .buttonStyle(.bordered)
             .font(.caption2)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var previewJudgementPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("预览判断（M4）")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(viewModel.previewJudgementStatusText)
+                .font(.caption2)
+                .foregroundStyle(viewModel.previewJudgementIsWarning ? Color.orange : Color.secondary)
+
+            Text(viewModel.previewJudgementDetailText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .padding(10)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))

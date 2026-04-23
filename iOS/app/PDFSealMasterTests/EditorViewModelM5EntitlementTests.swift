@@ -14,7 +14,8 @@ final class EditorViewModelM5EntitlementTests: XCTestCase {
 
         XCTAssertTrue(viewModel.isPaywallPresented)
         XCTAssertEqual(viewModel.activePaywallTrigger, .export)
-        XCTAssertEqual(await exportService.exportCallCount(), 0)
+        let exportCalls = await exportService.exportCallCount()
+        XCTAssertEqual(exportCalls, 0)
     }
 
     func testPurchaseUnlocksExportAfterPaywall() async {
@@ -32,7 +33,8 @@ final class EditorViewModelM5EntitlementTests: XCTestCase {
         XCTAssertFalse(viewModel.isPaywallPresented)
 
         await viewModel.exportPDF()
-        XCTAssertEqual(await exportService.exportCallCount(), 1)
+        let exportCalls = await exportService.exportCallCount()
+        XCTAssertEqual(exportCalls, 1)
     }
 
     func testUnifyStampSizePresentsPaywallForFreeUser() async {

@@ -124,11 +124,15 @@ struct DefaultPreviewModeService: PreviewModeService {
     }
 
     private func makeSimulatedScale(mode: PreviewMode, page: PageModel) -> Double {
+        guard mode == .matchedLowRes else {
+            // Original preview is the baseline reference and must remain at 100%.
+            return 1
+        }
+
         let fitScaleX = safeRatio(page.contentRectInA4PT.size.width, page.a4CanvasSizePT.width)
         let fitScaleY = safeRatio(page.contentRectInA4PT.size.height, page.a4CanvasSizePT.height)
         let baseScale = min(fitScaleX, fitScaleY)
-        let modeScale: Double = mode == .matchedLowRes ? 0.62 : 1
-        return clamp(baseScale * modeScale, min: 0.35, max: 1)
+        return clamp(baseScale * 0.62, min: 0.35, max: 1)
     }
 
     private func format(_ value: Double) -> String {

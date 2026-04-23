@@ -192,6 +192,7 @@ struct EditorView: View {
                     .foregroundStyle(.secondary)
 
                 stampSizeSyncPanel
+                bindingStampPanel
             }
             .padding(.horizontal)
 
@@ -230,7 +231,11 @@ struct EditorView: View {
             toolbarItem(title: "签名") {
                 viewModel.insertSelectedSignature()
             }
-            toolbarItem(title: "骑缝章") {}
+            toolbarItem(title: "骑缝章") {
+                Task {
+                    await viewModel.toggleBindingStampEnabled()
+                }
+            }
             toolbarItem(title: "下一页") {
                 viewModel.goToNextPage()
             }
@@ -322,6 +327,114 @@ struct EditorView: View {
             }
 
             Text("执行结果：\(viewModel.stampSizeSyncStatusMessage)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var bindingStampPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("骑缝章设置")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text("状态：\(viewModel.bindingStampEnabled ? "已启用" : "未启用")")
+                .font(.caption2)
+                .foregroundStyle(viewModel.bindingStampEnabled ? Color.accentColor : Color.secondary)
+
+            Text("素材：\(viewModel.bindingStampAssetName)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if let placement = viewModel.bindingStampPlacement {
+                Text("页码范围：\(viewModel.bindingStampPageRangeText)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Button("起始页-") {
+                        viewModel.adjustBindingStampStartPage(delta: -1)
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption2)
+                    .disabled(!viewModel.canConfigureBindingStamp)
+
+                    Button("起始页+") {
+                        viewModel.adjustBindingStampStartPage(delta: 1)
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption2)
+                    .disabled(!viewModel.canConfigureBindingStamp)
+
+                    Button("结束页-") {
+                        viewModel.adjustBindingStampEndPage(delta: -1)
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption2)
+                    .disabled(!viewModel.canConfigureBindingStamp)
+
+                    Button("结束页+") {
+                        viewModel.adjustBindingStampEndPage(delta: 1)
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption2)
+                    .disabled(!viewModel.canConfigureBindingStamp)
+                }
+
+                parameterRow(
+                    title: "总宽",
+                    value: "\(String(format: "%.1f", placement.targetWidthMM)) mm",
+                    minusAction: { viewModel.adjustBindingStampTargetWidth(deltaMM: -1) },
+                    plusAction: { viewModel.adjustBindingStampTargetWidth(deltaMM: 1) }
+                )
+
+                parameterRow(
+                    title: "缝隙",
+                    value: "\(String(format: "%.1f", placement.marginMM)) mm",
+                    minusAction: { viewModel.adjustBindingStampMargin(deltaMM: -0.5) },
+                    plusAction: { viewModel.adjustBindingStampMargin(deltaMM: 0.5) }
+                )
+
+                parameterRow(
+                    title: "缺口",
+                    value: "\(String(format: "%.1f", placement.lossMM)) mm",
+                    minusAction: { viewModel.adjustBindingStampLoss(deltaMM: -0.2) },
+                    plusAction: { viewModel.adjustBindingStampLoss(deltaMM: 0.2) }
+                )
+
+                parameterRow(
+                    title: "Y偏移",
+                    value: "\(String(format: "%.1f", placement.yOffsetMM)) mm",
+                    minusAction: { viewModel.adjustBindingStampYOffset(deltaMM: -1) },
+                    plusAction: { viewModel.adjustBindingStampYOffset(deltaMM: 1) }
+                )
+
+                parameterRow(
+                    title: "旋转",
+                    value: "\(String(format: "%.1f", placement.rotation))°",
+                    minusAction: { viewModel.adjustBindingStampRotation(delta: -1) },
+                    plusAction: { viewModel.adjustBindingStampRotation(delta: 1) }
+                )
+            } else {
+                Text("尚未创建骑缝章配置。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Button("用当前印章同步素材") {
+                    Task {
+                        await viewModel.applySelectedStampToBindingStamp()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .font(.caption2)
+                .disabled(!viewModel.canUseSelectedStampForBinding)
+            }
+
+            Text("执行结果：\(viewModel.bindingStampStatusMessage)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

@@ -15,10 +15,15 @@ protocol PDFExportService {
 final class FilePDFExportService: PDFExportService {
     private let fileManager: FileManager
     private let decoder: JSONDecoder
+    private let bindingStampService: BindingStampService
 
-    init(fileManager: FileManager = .default) {
+    init(
+        fileManager: FileManager = .default,
+        bindingStampService: BindingStampService = DefaultBindingStampService()
+    ) {
         self.fileManager = fileManager
         self.decoder = JSONDecoder()
+        self.bindingStampService = bindingStampService
     }
 
     func export(session: EditorSession) async throws -> URL {
@@ -130,6 +135,15 @@ final class FilePDFExportService: PDFExportService {
             } else if let signature = object.signaturePlacement {
                 drawSignature(signature, asset: signatureAssetsByID[signature.assetID])
             }
+        }
+
+        if let bindingPlacement = session.document.bindingStampPlacement {
+            drawBindingStampIfNeeded(
+                bindingPlacement,
+                on: page,
+                documentPageCount: session.document.pageCount,
+                stampAsset: stampAssetsByID[bindingPlacement.assetID]
+            )
         }
     }
 
@@ -338,6 +352,103 @@ final class FilePDFExportService: PDFExportService {
             color: UIColor.label.withAlphaComponent(signature.opacity * 0.8)
         )
         context.restoreGState()
+    }
+
+    private func drawBindingStampIfNeeded(
+        _ placement: BindingStampPlacement,
+        on page: PageModel,
+        documentPageCount: Int,
+        stampAsset: StampAsset?
+    ) {
+        let pageSizeMM = page.a4CanvasSizePT.asMillimeterSize
+        guard let plan = bindingStampService.drawPlan(
+            for: page.index,
+            documentPageCount: documentPageCount,
+            pageSizeMM: pageSizeMM,
+            placement: placement,
+            aspectRatio: stampAsset?.defaultAspectRatio
+        ) else {
+            return
+        }
+
+        let drawRect = CGRect(
+            x: plan.originXMM * A4Measurement.pointsPerMillimeter,
+            y: plan.originYMM * A4Measurement.pointsPerMillimeter,
+            width: plan.widthMM * A4Measurement.pointsPerMillimeter,
+            height: plan.heightMM * A4Measurement.pointsPerMillimeter
+        )
+
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
+
+        context.saveGState()
+        context.setAlpha(0.9)
+        context.translateBy(x: drawRect.midX, y: drawRect.midY)
+        context.rotate(by: CGFloat(plan.rotation * .pi / 180.0))
+        context.translateBy(x: -drawRect.midX, y: -drawRect.midY)
+
+        if
+            let stampAsset,
+            let renderedImage = renderedStampImage(for: stampAsset),
+            let sliceImage = bindingStampSliceImage(
+                from: renderedImage,
+                pageOffset: plan.pageOffset,
+                pageCount: plan.pageCount
+            )
+        {
+            sliceImage.draw(in: drawRect)
+            context.restoreGState()
+            return
+        }
+
+        let fallbackColor = UIColor.systemRed.withAlphaComponent(0.7)
+        fallbackColor.setStroke()
+        UIBezierPath(rect: drawRect).stroke()
+        drawText(
+            "骑缝章",
+            at: CGPoint(x: drawRect.minX + 4, y: drawRect.midY - 8),
+            font: .boldSystemFont(ofSize: 10),
+            color: fallbackColor
+        )
+
+        context.restoreGState()
+    }
+
+    private func bindingStampSliceImage(
+        from image: UIImage,
+        pageOffset: Int,
+        pageCount: Int
+    ) -> UIImage? {
+        guard pageCount > 0 else {
+            return nil
+        }
+
+        guard let cgImage = ImageFileInspector.normalizedCGImage(from: image) else {
+            return image
+        }
+
+        guard let crop = bindingStampService.sliceCrop(
+            forImageWidth: cgImage.width,
+            imageHeight: cgImage.height,
+            pageOffset: pageOffset,
+            pageCount: pageCount
+        ) else {
+            return nil
+        }
+
+        let cropRect = CGRect(
+            x: crop.x,
+            y: 0,
+            width: crop.width,
+            height: crop.height
+        )
+
+        guard let cropped = cgImage.cropping(to: cropRect) else {
+            return image
+        }
+
+        return UIImage(cgImage: cropped, scale: 1, orientation: .up)
     }
 
     private func drawText(

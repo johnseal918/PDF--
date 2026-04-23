@@ -15,11 +15,13 @@ final class EditorViewModel: ObservableObject {
     @Published private(set) var signatureSyncStatusMessage = "签名素材已就绪"
     @Published private(set) var signatureReplaceReceiptMessage = "暂无替换回执。"
     @Published private(set) var stampSizeSyncStatusMessage = "统一尺寸未执行。"
+    @Published private(set) var bindingStampStatusMessage = "骑缝章未启用。"
 
     private let draftRecoveryService: DraftRecoveryService
     private let stampAssetService: StampAssetService
     private let signatureAssetService: SignatureAssetService
     private let pdfExportService: PDFExportService
+    private let bindingStampService: BindingStampService
     private let issueLogService: IssueLogService
     private var autoSaveTask: Task<Void, Never>?
 
@@ -29,13 +31,15 @@ final class EditorViewModel: ObservableObject {
         stampAssetService: StampAssetService,
         signatureAssetService: SignatureAssetService,
         pdfExportService: PDFExportService,
-        issueLogService: IssueLogService
+        issueLogService: IssueLogService,
+        bindingStampService: BindingStampService = DefaultBindingStampService()
     ) {
         self.session = session
         self.draftRecoveryService = draftRecoveryService
         self.stampAssetService = stampAssetService
         self.signatureAssetService = signatureAssetService
         self.pdfExportService = pdfExportService
+        self.bindingStampService = bindingStampService
         self.issueLogService = issueLogService
         self.signatureReplaceReceiptMessage = session.signatureReplaceReceiptMessage
         normalizeSelectionForActivePage()
@@ -138,6 +142,39 @@ final class EditorViewModel: ObservableObject {
             return "请选择一个印章对象作为统一尺寸基准。"
         }
         return "基准尺寸：\(String(format: "%.1f", selectedStampPlacement.widthMM)) × \(String(format: "%.1f", selectedStampPlacement.heightMM)) mm"
+    }
+
+    var bindingStampPlacement: BindingStampPlacement? {
+        session.document.bindingStampPlacement
+    }
+
+    var bindingStampEnabled: Bool {
+        bindingStampPlacement?.enabled ?? false
+    }
+
+    var bindingStampAssetName: String {
+        guard let placement = bindingStampPlacement else {
+            return "未配置"
+        }
+        if let asset = availableStampAssets.first(where: { $0.id == placement.assetID }) {
+            return asset.name
+        }
+        return "素材缺失（\(placement.assetID.uuidString.prefix(8))）"
+    }
+
+    var bindingStampPageRangeText: String {
+        guard let placement = bindingStampPlacement else {
+            return "未配置"
+        }
+        return "\(placement.startPage + 1)-\(placement.endPage + 1) / 共\(document.pageCount)页"
+    }
+
+    var canConfigureBindingStamp: Bool {
+        document.pageCount > 0
+    }
+
+    var canUseSelectedStampForBinding: Bool {
+        selectedStampAssetID != nil
     }
 
     var selectedSignatureName: String {
@@ -405,6 +442,99 @@ final class EditorViewModel: ObservableObject {
 
         let nextIndex = (currentIndex + 1) % availableStampAssets.count
         self.selectedStampAssetID = availableStampAssets[nextIndex].id
+    }
+
+    func applySelectedStampToBindingStamp() async {
+        guard let selectedStampAssetID else {
+            bindingStampStatusMessage = "请先选择印章素材。"
+            return
+        }
+
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.assetID = selectedStampAssetID
+            if let selectedStampPlacement {
+                placement.targetWidthMM = selectedStampPlacement.widthMM
+            }
+            placement.enabled = true
+        }
+
+        bindingStampStatusMessage = "骑缝章素材已同步为当前印章。"
+        await issueLogService.recordFeedback(
+            "骑缝章素材同步成功",
+            category: .stampImport,
+            context: [
+                "documentID": session.document.id.uuidString,
+                "assetID": selectedStampAssetID.uuidString
+            ]
+        )
+    }
+
+    func toggleBindingStampEnabled() async {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.enabled.toggle()
+        }
+
+        bindingStampStatusMessage = bindingStampEnabled
+            ? "骑缝章已启用。"
+            : "骑缝章已关闭。"
+
+        await issueLogService.recordFeedback(
+            "骑缝章开关切换",
+            category: .stampImport,
+            context: [
+                "documentID": session.document.id.uuidString,
+                "enabled": bindingStampEnabled ? "true" : "false"
+            ]
+        )
+    }
+
+    func adjustBindingStampStartPage(delta: Int) {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.startPage += delta
+        }
+        bindingStampStatusMessage = "骑缝章起始页已更新。"
+    }
+
+    func adjustBindingStampEndPage(delta: Int) {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.endPage += delta
+        }
+        bindingStampStatusMessage = "骑缝章结束页已更新。"
+    }
+
+    func adjustBindingStampTargetWidth(deltaMM: Double) {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.targetWidthMM += deltaMM
+        }
+        bindingStampStatusMessage = "骑缝章目标尺寸已更新。"
+    }
+
+    func adjustBindingStampMargin(deltaMM: Double) {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.marginMM += deltaMM
+        }
+        bindingStampStatusMessage = "骑缝章边缘缝隙已更新。"
+    }
+
+    func adjustBindingStampLoss(deltaMM: Double) {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.lossMM += deltaMM
+        }
+        bindingStampStatusMessage = "骑缝章缺口参数已更新。"
+    }
+
+    func adjustBindingStampYOffset(deltaMM: Double) {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.yOffsetMM += deltaMM
+        }
+        bindingStampStatusMessage = "骑缝章纵向偏移已更新。"
+    }
+
+    func adjustBindingStampRotation(delta: Double) {
+        mutateBindingStampPlacement(touch: true) { placement in
+            placement.rotation += delta
+        }
+        bindingStampStatusMessage = "骑缝章旋转角度已更新。"
     }
 
     func insertSelectedSignature() {
@@ -1105,6 +1235,20 @@ final class EditorViewModel: ObservableObject {
             return
         }
 
+        var syncedBindingTarget = false
+        if var bindingPlacement = session.document.bindingStampPlacement {
+            let normalizedTargetWidth = min(max(targetWidth, 10.0), 300.0)
+            if abs(bindingPlacement.targetWidthMM - normalizedTargetWidth) > 0.0001 {
+                bindingPlacement.targetWidthMM = normalizedTargetWidth
+                bindingPlacement = bindingStampService.normalizePlacement(
+                    bindingPlacement,
+                    pageCount: document.pageCount
+                )
+                session.document.bindingStampPlacement = bindingPlacement
+                syncedBindingTarget = true
+            }
+        }
+
         touchSession()
 
         let pagesText = touchedPages
@@ -1112,9 +1256,12 @@ final class EditorViewModel: ObservableObject {
             .map { String($0 + 1) }
             .joined(separator: ",")
 
-        stampSizeSyncStatusMessage = scope == .global
+        let baseMessage = scope == .global
             ? "已统一全稿 \(updatedCount) 个印章对象尺寸（页码：\(pagesText)）。"
             : "已统一本页 \(updatedCount) 个印章对象尺寸。"
+        stampSizeSyncStatusMessage = syncedBindingTarget
+            ? "\(baseMessage) 骑缝章目标尺寸已同步。"
+            : baseMessage
 
         await issueLogService.recordFeedback(
             "统一印章尺寸完成",
@@ -1123,11 +1270,43 @@ final class EditorViewModel: ObservableObject {
                 "documentID": session.document.id.uuidString,
                 "scope": scope == .global ? "global" : "activePage",
                 "updatedCount": String(updatedCount),
+                "syncedBindingTarget": syncedBindingTarget ? "true" : "false",
                 "targetWidthMM": String(format: "%.2f", targetWidth),
                 "targetHeightMM": String(format: "%.2f", targetHeight),
                 "activePageIndex": String(session.activePageIndex)
             ]
         )
+    }
+
+    private func mutateBindingStampPlacement(
+        touch: Bool,
+        mutate: (inout BindingStampPlacement) -> Void
+    ) {
+        guard canConfigureBindingStamp else {
+            bindingStampStatusMessage = "当前文档没有页面，无法配置骑缝章。"
+            return
+        }
+
+        var placement = session.document.bindingStampPlacement
+            ?? bindingStampService.makeDefaultPlacement(
+                pageCount: document.pageCount,
+                preferredAssetID: selectedStampAssetID,
+                fallbackAssetID: availableStampAssets.first?.id,
+                suggestedWidthMM: selectedStampPlacement?.widthMM
+                    ?? availableStampAssets.first?.finalPhysicalSizeMM
+                    ?? availableStampAssets.first?.physicalSizePresetMM
+            )
+
+        mutate(&placement)
+        placement = bindingStampService.normalizePlacement(
+            placement,
+            pageCount: document.pageCount
+        )
+        session.document.bindingStampPlacement = placement
+
+        if touch {
+            touchSession()
+        }
     }
 
     private func scheduleAutoSave() {

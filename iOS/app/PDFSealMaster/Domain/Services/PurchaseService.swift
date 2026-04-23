@@ -7,6 +7,34 @@ protocol PurchaseService {
     func canUse(_ feature: ProFeature) async -> Bool
 }
 
+enum PurchaseServiceError: LocalizedError, Equatable {
+    case productNotFound
+    case purchasePending
+    case purchaseCancelled
+    case purchaseVerificationFailed
+    case restoreFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .productNotFound:
+            return "未找到可购买的专业版商品，请稍后重试。"
+        case .purchasePending:
+            return "购买正在等待系统确认，请稍后刷新权益状态。"
+        case .purchaseCancelled:
+            return "已取消购买。"
+        case .purchaseVerificationFailed:
+            return "购买校验失败，请重试或恢复购买。"
+        case .restoreFailed:
+            return "恢复购买失败，请稍后重试。"
+        }
+    }
+}
+
+enum PurchaseProductCatalog {
+    // First App Store submission uses a one-time unlock product.
+    static let proLifetime = "com.johnseal918.pdfsealmaster.pro.lifetime"
+}
+
 actor InMemoryPurchaseService: PurchaseService {
     private var entitlementState: EntitlementState
 
@@ -54,8 +82,8 @@ actor LocalPurchaseService: PurchaseService {
     }
 
     func restorePurchases() async throws {
-        // Placeholder restore behavior for M5 skeleton.
-        // StoreKit transaction sync will replace this in the next milestone slice.
+        // Local fallback mode has no App Store receipt to sync.
+        // Keep existing local entitlement state unchanged.
     }
 
     func canUse(_ feature: ProFeature) async -> Bool {

@@ -10,7 +10,14 @@ struct PDFSealMasterApp: App {
     private let stampAssetService: StampAssetService = FileStampAssetService()
     private let signatureAssetService: SignatureAssetService = FileSignatureAssetService()
     private let pdfExportService: PDFExportService = FilePDFExportService()
-    private let purchaseService: PurchaseService = LocalPurchaseService()
+    private let purchaseService: PurchaseService = {
+#if canImport(StoreKit)
+        if #available(iOS 15.0, *) {
+            return StoreKitPurchaseService(productID: PurchaseProductCatalog.proLifetime)
+        }
+#endif
+        return LocalPurchaseService()
+    }()
     private let issueLogService: IssueLogService = FileIssueLogService()
 
     var body: some Scene {

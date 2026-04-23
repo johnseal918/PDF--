@@ -14,6 +14,7 @@ enum IssueLogCategory: String, Sendable {
     case draftRecovery = "draft.recovery"
     case draftSave = "draft.save"
     case export = "export"
+    case purchase = "purchase"
     case feedback = "feedback"
 }
 

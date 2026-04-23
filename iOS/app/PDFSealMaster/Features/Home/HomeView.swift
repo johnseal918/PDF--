@@ -10,6 +10,7 @@ struct HomeView: View {
     let stampAssetService: StampAssetService
     let signatureAssetService: SignatureAssetService
     let pdfExportService: PDFExportService
+    let purchaseService: PurchaseService
     let issueLogService: IssueLogService
 
     @State private var latestDraftSession: EditorSession?
@@ -36,6 +37,7 @@ struct HomeView: View {
                         stampAssetService: stampAssetService,
                         signatureAssetService: signatureAssetService,
                         pdfExportService: pdfExportService,
+                        purchaseService: purchaseService,
                         issueLogService: issueLogService,
                         onBack: {
                             router.showHome()
@@ -112,7 +114,7 @@ struct HomeView: View {
             Text("iPhone 首发版已启动")
                 .font(.title2.weight(.semibold))
 
-            Text("当前阶段：M3 已收口，正在推进 M4（预览判断与实际尺寸检查）。")
+            Text("当前阶段：M4 已收口，正在推进 M5（付费与上线准备）。")
                 .font(.body)
                 .foregroundStyle(.secondary)
 

@@ -17,11 +17,17 @@ final class EditorViewModel: ObservableObject {
     @Published private(set) var stampSizeSyncStatusMessage = "统一尺寸未执行。"
     @Published private(set) var bindingStampStatusMessage = "骑缝章未启用。"
     @Published private(set) var isActualSizeInspectionEnabled = false
+    @Published private(set) var entitlementState: EntitlementState = .unknown
+    @Published private(set) var activePaywallTrigger: PaywallTrigger?
+    @Published private(set) var isPaywallPresented = false
+    @Published private(set) var purchaseStatusMessage = "权益状态待同步。"
+    @Published private(set) var isPurchaseInProgress = false
 
     private let draftRecoveryService: DraftRecoveryService
     private let stampAssetService: StampAssetService
     private let signatureAssetService: SignatureAssetService
     private let pdfExportService: PDFExportService
+    private let purchaseService: PurchaseService
     private let bindingStampService: BindingStampService
     private let actualSizeInspectionService: ActualSizeInspectionService
     private let previewModeService: PreviewModeService
@@ -34,6 +40,7 @@ final class EditorViewModel: ObservableObject {
         stampAssetService: StampAssetService,
         signatureAssetService: SignatureAssetService,
         pdfExportService: PDFExportService,
+        purchaseService: PurchaseService = InMemoryPurchaseService(initialState: .pro),
         issueLogService: IssueLogService,
         bindingStampService: BindingStampService = DefaultBindingStampService(),
         actualSizeInspectionService: ActualSizeInspectionService = DefaultActualSizeInspectionService(),
@@ -44,6 +51,7 @@ final class EditorViewModel: ObservableObject {
         self.stampAssetService = stampAssetService
         self.signatureAssetService = signatureAssetService
         self.pdfExportService = pdfExportService
+        self.purchaseService = purchaseService
         self.bindingStampService = bindingStampService
         self.actualSizeInspectionService = actualSizeInspectionService
         self.previewModeService = previewModeService
@@ -182,6 +190,21 @@ final class EditorViewModel: ObservableObject {
 
     var canUseSelectedStampForBinding: Bool {
         selectedStampAssetID != nil
+    }
+
+    var canUseProFeatures: Bool {
+        entitlementState == .pro
+    }
+
+    var entitlementBadgeText: String {
+        "权益：\(entitlementState.displayName)"
+    }
+
+    var entitlementStatusText: String {
+        if canUseProFeatures {
+            return "专业版能力可用。"
+        }
+        return purchaseStatusMessage
     }
 
     var previewJudgementStatusText: String {
@@ -367,6 +390,82 @@ final class EditorViewModel: ObservableObject {
         return placement.assetID != selectedSignatureAssetID
     }
 
+    func loadEntitlementState() async {
+        let state = await purchaseService.currentEntitlements()
+        entitlementState = state
+        purchaseStatusMessage = state == .pro
+            ? "已解锁专业版。"
+            : "免费版可编辑，导出/骑缝章/统一尺寸需升级专业版。"
+    }
+
+    func dismissPaywall() {
+        isPaywallPresented = false
+        activePaywallTrigger = nil
+    }
+
+    func purchaseProFromPaywall() async {
+        isPurchaseInProgress = true
+        defer { isPurchaseInProgress = false }
+        let triggerTitle = activePaywallTrigger?.displayTitle ?? "unknown"
+
+        do {
+            try await purchaseService.purchasePro()
+            entitlementState = await purchaseService.currentEntitlements()
+            isPaywallPresented = false
+            activePaywallTrigger = nil
+            purchaseStatusMessage = "购买成功，专业版能力已解锁。"
+            await issueLogService.recordFeedback(
+                "购买专业版成功",
+                category: .purchase,
+                context: [
+                    "documentID": session.document.id.uuidString,
+                    "trigger": triggerTitle
+                ]
+            )
+        } catch {
+            purchaseStatusMessage = "购买失败，请稍后重试。"
+            await issueLogService.recordError(
+                "购买专业版失败",
+                error: error,
+                category: .purchase,
+                context: ["documentID": session.document.id.uuidString]
+            )
+        }
+    }
+
+    func restorePurchasesFromPaywall() async {
+        isPurchaseInProgress = true
+        defer { isPurchaseInProgress = false }
+
+        do {
+            try await purchaseService.restorePurchases()
+            entitlementState = await purchaseService.currentEntitlements()
+            if entitlementState == .pro {
+                isPaywallPresented = false
+                activePaywallTrigger = nil
+                purchaseStatusMessage = "恢复成功，专业版已激活。"
+            } else {
+                purchaseStatusMessage = "未检测到可恢复的专业版购买记录。"
+            }
+            await issueLogService.recordFeedback(
+                "恢复购买完成",
+                category: .purchase,
+                context: [
+                    "documentID": session.document.id.uuidString,
+                    "entitlement": entitlementState.displayName
+                ]
+            )
+        } catch {
+            purchaseStatusMessage = "恢复失败，请稍后重试。"
+            await issueLogService.recordError(
+                "恢复购买失败",
+                error: error,
+                category: .purchase,
+                context: ["documentID": session.document.id.uuidString]
+            )
+        }
+    }
+
     func loadEditorAssets() async {
         await loadStampAssets()
         await loadSignatureAssets()
@@ -538,6 +637,11 @@ final class EditorViewModel: ObservableObject {
     }
 
     func applySelectedStampToBindingStamp() async {
+        guard await requireProAccess(for: .bindingStamp) else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
+
         guard let selectedStampAssetID else {
             bindingStampStatusMessage = "请先选择印章素材。"
             return
@@ -563,6 +667,12 @@ final class EditorViewModel: ObservableObject {
     }
 
     func toggleBindingStampEnabled() async {
+        if !bindingStampEnabled {
+            guard await requireProAccess(for: .bindingStamp) else {
+                return
+            }
+        }
+
         mutateBindingStampPlacement(touch: true) { placement in
             placement.enabled.toggle()
         }
@@ -582,6 +692,10 @@ final class EditorViewModel: ObservableObject {
     }
 
     func adjustBindingStampStartPage(delta: Int) {
+        guard canUseProFeatures else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
         mutateBindingStampPlacement(touch: true) { placement in
             placement.startPage += delta
         }
@@ -589,6 +703,10 @@ final class EditorViewModel: ObservableObject {
     }
 
     func adjustBindingStampEndPage(delta: Int) {
+        guard canUseProFeatures else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
         mutateBindingStampPlacement(touch: true) { placement in
             placement.endPage += delta
         }
@@ -596,6 +714,10 @@ final class EditorViewModel: ObservableObject {
     }
 
     func adjustBindingStampTargetWidth(deltaMM: Double) {
+        guard canUseProFeatures else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
         mutateBindingStampPlacement(touch: true) { placement in
             placement.targetWidthMM += deltaMM
         }
@@ -603,6 +725,10 @@ final class EditorViewModel: ObservableObject {
     }
 
     func adjustBindingStampMargin(deltaMM: Double) {
+        guard canUseProFeatures else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
         mutateBindingStampPlacement(touch: true) { placement in
             placement.marginMM += deltaMM
         }
@@ -610,6 +736,10 @@ final class EditorViewModel: ObservableObject {
     }
 
     func adjustBindingStampLoss(deltaMM: Double) {
+        guard canUseProFeatures else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
         mutateBindingStampPlacement(touch: true) { placement in
             placement.lossMM += deltaMM
         }
@@ -617,6 +747,10 @@ final class EditorViewModel: ObservableObject {
     }
 
     func adjustBindingStampYOffset(deltaMM: Double) {
+        guard canUseProFeatures else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
         mutateBindingStampPlacement(touch: true) { placement in
             placement.yOffsetMM += deltaMM
         }
@@ -624,6 +758,10 @@ final class EditorViewModel: ObservableObject {
     }
 
     func adjustBindingStampRotation(delta: Double) {
+        guard canUseProFeatures else {
+            bindingStampStatusMessage = "骑缝章设置需要专业版。"
+            return
+        }
         mutateBindingStampPlacement(touch: true) { placement in
             placement.rotation += delta
         }
@@ -1163,6 +1301,12 @@ final class EditorViewModel: ObservableObject {
     }
 
     func exportPDF() async {
+        guard await requireProAccess(for: .export) else {
+            exportStatusMessage = "导出需要专业版。"
+            exportDetailMessage = "请先完成专业版购买或恢复购买后再执行正式导出。"
+            return
+        }
+
         isExportingPDF = true
         exportStatusMessage = "正在生成导出文件..."
         exportDetailMessage = "将优先渲染真实页面内容与印章/签名素材。"
@@ -1202,6 +1346,40 @@ final class EditorViewModel: ObservableObject {
         }
 
         isExportingPDF = false
+    }
+
+    private func requireProAccess(for trigger: PaywallTrigger) async -> Bool {
+        let feature = feature(for: trigger)
+        if await purchaseService.canUse(feature) {
+            entitlementState = await purchaseService.currentEntitlements()
+            return true
+        }
+
+        entitlementState = await purchaseService.currentEntitlements()
+        activePaywallTrigger = trigger
+        isPaywallPresented = true
+        purchaseStatusMessage = "\(trigger.displayTitle) 需要专业版。"
+        await issueLogService.recordFeedback(
+            "触发付费拦截",
+            category: .purchase,
+            context: [
+                "documentID": session.document.id.uuidString,
+                "trigger": trigger.displayTitle,
+                "entitlement": entitlementState.displayName
+            ]
+        )
+        return false
+    }
+
+    private func feature(for trigger: PaywallTrigger) -> ProFeature {
+        switch trigger {
+        case .export:
+            return .export
+        case .bindingStamp:
+            return .bindingStamp
+        case .unifyStampSize:
+            return .unifyStampSize
+        }
     }
 
     private func refreshSelectionForActivePage() {
@@ -1295,6 +1473,11 @@ final class EditorViewModel: ObservableObject {
     }
 
     private func unifyStampSizes(scope: StampSizeSyncScope) async {
+        guard await requireProAccess(for: .unifyStampSize) else {
+            stampSizeSyncStatusMessage = "统一尺寸需要专业版。"
+            return
+        }
+
         guard let selectedStamp = selectedStampPlacement else {
             stampSizeSyncStatusMessage = "请先选中一个印章对象。"
             return

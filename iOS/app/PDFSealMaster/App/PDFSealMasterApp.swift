@@ -10,6 +10,7 @@ struct PDFSealMasterApp: App {
     private let stampAssetService: StampAssetService = FileStampAssetService()
     private let signatureAssetService: SignatureAssetService = FileSignatureAssetService()
     private let pdfExportService: PDFExportService = FilePDFExportService()
+    private let purchaseService: PurchaseService = LocalPurchaseService()
     private let issueLogService: IssueLogService = FileIssueLogService()
 
     var body: some Scene {
@@ -22,6 +23,7 @@ struct PDFSealMasterApp: App {
                 stampAssetService: stampAssetService,
                 signatureAssetService: signatureAssetService,
                 pdfExportService: pdfExportService,
+                purchaseService: purchaseService,
                 issueLogService: issueLogService
             )
         }

@@ -10,6 +10,7 @@ struct EditorView: View {
         stampAssetService: StampAssetService,
         signatureAssetService: SignatureAssetService,
         pdfExportService: PDFExportService,
+        purchaseService: PurchaseService,
         issueLogService: IssueLogService,
         onBack: @escaping () -> Void
     ) {
@@ -20,6 +21,7 @@ struct EditorView: View {
                 stampAssetService: stampAssetService,
                 signatureAssetService: signatureAssetService,
                 pdfExportService: pdfExportService,
+                purchaseService: purchaseService,
                 issueLogService: issueLogService
             )
         )
@@ -37,6 +39,37 @@ struct EditorView: View {
         .background(Color(.systemBackground))
         .task {
             await viewModel.loadEditorAssets()
+            await viewModel.loadEntitlementState()
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.isPaywallPresented && viewModel.activePaywallTrigger != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.dismissPaywall()
+                }
+            }
+        )) {
+            if let trigger = viewModel.activePaywallTrigger {
+                PaywallView(
+                    trigger: trigger,
+                    entitlementState: viewModel.entitlementState,
+                    statusMessage: viewModel.purchaseStatusMessage,
+                    isProcessing: viewModel.isPurchaseInProgress,
+                    onPurchase: {
+                        Task {
+                            await viewModel.purchaseProFromPaywall()
+                        }
+                    },
+                    onRestore: {
+                        Task {
+                            await viewModel.restorePurchasesFromPaywall()
+                        }
+                    },
+                    onClose: {
+                        viewModel.dismissPaywall()
+                    }
+                )
+            }
         }
     }
 
@@ -182,6 +215,14 @@ struct EditorView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
+                Text(viewModel.entitlementBadgeText)
+                    .font(.caption2)
+                    .foregroundStyle(viewModel.canUseProFeatures ? Color.green : Color.orange)
+
+                Text(viewModel.entitlementStatusText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
                 if viewModel.isExportingPDF {
                     ProgressView("正在生成导出文件...")
                         .font(.caption)
@@ -191,7 +232,7 @@ struct EditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("M3 已完成骑缝章与统一尺寸，当前进入 M4：预览判断与实际尺寸检查。")
+                Text("M4 已收口，当前进入 M5：付费与上线准备。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -337,6 +378,12 @@ struct EditorView: View {
                 .disabled(!viewModel.canUnifyStampSizesGlobally)
             }
 
+            if !viewModel.canUseProFeatures {
+                Text("提示：统一尺寸属于专业版能力。")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
             Text("执行结果：\(viewModel.stampSizeSyncStatusMessage)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -370,28 +417,28 @@ struct EditorView: View {
                     }
                     .buttonStyle(.bordered)
                     .font(.caption2)
-                    .disabled(!viewModel.canConfigureBindingStamp)
+                    .disabled(!viewModel.canConfigureBindingStamp || !viewModel.canUseProFeatures)
 
                     Button("起始页+") {
                         viewModel.adjustBindingStampStartPage(delta: 1)
                     }
                     .buttonStyle(.bordered)
                     .font(.caption2)
-                    .disabled(!viewModel.canConfigureBindingStamp)
+                    .disabled(!viewModel.canConfigureBindingStamp || !viewModel.canUseProFeatures)
 
                     Button("结束页-") {
                         viewModel.adjustBindingStampEndPage(delta: -1)
                     }
                     .buttonStyle(.bordered)
                     .font(.caption2)
-                    .disabled(!viewModel.canConfigureBindingStamp)
+                    .disabled(!viewModel.canConfigureBindingStamp || !viewModel.canUseProFeatures)
 
                     Button("结束页+") {
                         viewModel.adjustBindingStampEndPage(delta: 1)
                     }
                     .buttonStyle(.bordered)
                     .font(.caption2)
-                    .disabled(!viewModel.canConfigureBindingStamp)
+                    .disabled(!viewModel.canConfigureBindingStamp || !viewModel.canUseProFeatures)
                 }
 
                 parameterRow(
@@ -400,6 +447,7 @@ struct EditorView: View {
                     minusAction: { viewModel.adjustBindingStampTargetWidth(deltaMM: -1) },
                     plusAction: { viewModel.adjustBindingStampTargetWidth(deltaMM: 1) }
                 )
+                .disabled(!viewModel.canUseProFeatures)
 
                 parameterRow(
                     title: "缝隙",
@@ -407,6 +455,7 @@ struct EditorView: View {
                     minusAction: { viewModel.adjustBindingStampMargin(deltaMM: -0.5) },
                     plusAction: { viewModel.adjustBindingStampMargin(deltaMM: 0.5) }
                 )
+                .disabled(!viewModel.canUseProFeatures)
 
                 parameterRow(
                     title: "缺口",
@@ -414,6 +463,7 @@ struct EditorView: View {
                     minusAction: { viewModel.adjustBindingStampLoss(deltaMM: -0.2) },
                     plusAction: { viewModel.adjustBindingStampLoss(deltaMM: 0.2) }
                 )
+                .disabled(!viewModel.canUseProFeatures)
 
                 parameterRow(
                     title: "Y偏移",
@@ -421,6 +471,7 @@ struct EditorView: View {
                     minusAction: { viewModel.adjustBindingStampYOffset(deltaMM: -1) },
                     plusAction: { viewModel.adjustBindingStampYOffset(deltaMM: 1) }
                 )
+                .disabled(!viewModel.canUseProFeatures)
 
                 parameterRow(
                     title: "旋转",
@@ -428,6 +479,7 @@ struct EditorView: View {
                     minusAction: { viewModel.adjustBindingStampRotation(delta: -1) },
                     plusAction: { viewModel.adjustBindingStampRotation(delta: 1) }
                 )
+                .disabled(!viewModel.canUseProFeatures)
             } else {
                 Text("尚未创建骑缝章配置。")
                     .font(.caption2)
@@ -442,7 +494,13 @@ struct EditorView: View {
                 }
                 .buttonStyle(.bordered)
                 .font(.caption2)
-                .disabled(!viewModel.canUseSelectedStampForBinding)
+                .disabled(!viewModel.canUseSelectedStampForBinding || !viewModel.canUseProFeatures)
+            }
+
+            if !viewModel.canUseProFeatures {
+                Text("提示：骑缝章设置属于专业版能力。")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
             }
 
             Text("执行结果：\(viewModel.bindingStampStatusMessage)")

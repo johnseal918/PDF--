@@ -14,6 +14,7 @@ final class EditorViewModel: ObservableObject {
     @Published private(set) var draftStatusMessage = "自动保存已启用"
     @Published private(set) var signatureSyncStatusMessage = "签名素材已就绪"
     @Published private(set) var signatureReplaceReceiptMessage = "暂无替换回执。"
+    @Published private(set) var stampSizeSyncStatusMessage = "统一尺寸未执行。"
 
     private let draftRecoveryService: DraftRecoveryService
     private let stampAssetService: StampAssetService
@@ -103,6 +104,40 @@ final class EditorViewModel: ObservableObject {
 
     var availableStampCount: Int {
         availableStampAssets.count
+    }
+
+    var stampPlacementCount: Int {
+        session.document.editorObjects.reduce(into: 0) { count, object in
+            if object.stampPlacement != nil {
+                count += 1
+            }
+        }
+    }
+
+    var stampPlacementCountOnActivePage: Int {
+        session.document.editorObjects.reduce(into: 0) { count, object in
+            guard object.pageIndex == session.activePageIndex else {
+                return
+            }
+            if object.stampPlacement != nil {
+                count += 1
+            }
+        }
+    }
+
+    var canUnifyStampSizesGlobally: Bool {
+        selectedStampPlacement != nil && stampPlacementCount > 1
+    }
+
+    var canUnifyStampSizesOnActivePage: Bool {
+        selectedStampPlacement != nil && stampPlacementCountOnActivePage > 1
+    }
+
+    var stampSizeSyncTargetText: String {
+        guard let selectedStampPlacement else {
+            return "请选择一个印章对象作为统一尺寸基准。"
+        }
+        return "基准尺寸：\(String(format: "%.1f", selectedStampPlacement.widthMM)) × \(String(format: "%.1f", selectedStampPlacement.heightMM)) mm"
     }
 
     var selectedSignatureName: String {
@@ -875,6 +910,14 @@ final class EditorViewModel: ObservableObject {
         )
     }
 
+    func unifyStampSizesOnActivePage() async {
+        await unifyStampSizes(scope: .activePage)
+    }
+
+    func unifyStampSizesGlobally() async {
+        await unifyStampSizes(scope: .global)
+    }
+
     func saveDraft() async {
         do {
             draftStatusMessage = "保存中..."
@@ -999,6 +1042,92 @@ final class EditorViewModel: ObservableObject {
         session.document.draftVersion += 1
         draftStatusMessage = "草稿待保存"
         scheduleAutoSave()
+    }
+
+    private enum StampSizeSyncScope {
+        case activePage
+        case global
+    }
+
+    private func unifyStampSizes(scope: StampSizeSyncScope) async {
+        guard let selectedStamp = selectedStampPlacement else {
+            stampSizeSyncStatusMessage = "请先选中一个印章对象。"
+            return
+        }
+
+        let targetWidth = max(selectedStamp.widthMM, 5.0)
+        let targetHeight = max(selectedStamp.heightMM, 5.0)
+        var updatedCount = 0
+        var touchedPages = Set<Int>()
+
+        for index in session.document.editorObjects.indices {
+            guard var placement = session.document.editorObjects[index].stampPlacement else {
+                continue
+            }
+
+            if scope == .activePage, placement.pageIndex != session.activePageIndex {
+                continue
+            }
+
+            guard session.document.pages.indices.contains(placement.pageIndex) else {
+                continue
+            }
+
+            let pageSizeMM = session.document.pages[placement.pageIndex].a4CanvasSizePT.asMillimeterSize
+            let nextWidth = min(targetWidth, pageSizeMM.width)
+            let nextHeight = min(targetHeight, pageSizeMM.height)
+            let nextOriginX = min(max(placement.originXMM, 0), max(pageSizeMM.width - nextWidth, 0))
+            let nextOriginY = min(max(placement.originYMM, 0), max(pageSizeMM.height - nextHeight, 0))
+
+            let hasChanged =
+                abs(placement.widthMM - nextWidth) > 0.0001 ||
+                abs(placement.heightMM - nextHeight) > 0.0001 ||
+                abs(placement.originXMM - nextOriginX) > 0.0001 ||
+                abs(placement.originYMM - nextOriginY) > 0.0001
+
+            guard hasChanged else {
+                continue
+            }
+
+            placement.widthMM = nextWidth
+            placement.heightMM = nextHeight
+            placement.originXMM = nextOriginX
+            placement.originYMM = nextOriginY
+            session.document.editorObjects[index].stampPlacement = placement
+            updatedCount += 1
+            touchedPages.insert(placement.pageIndex)
+        }
+
+        guard updatedCount > 0 else {
+            stampSizeSyncStatusMessage = scope == .global
+                ? "全稿印章尺寸已一致，无需同步。"
+                : "本页印章尺寸已一致，无需同步。"
+            return
+        }
+
+        touchSession()
+
+        let pagesText = touchedPages
+            .sorted()
+            .map { String($0 + 1) }
+            .joined(separator: ",")
+
+        stampSizeSyncStatusMessage = scope == .global
+            ? "已统一全稿 \(updatedCount) 个印章对象尺寸（页码：\(pagesText)）。"
+            : "已统一本页 \(updatedCount) 个印章对象尺寸。"
+
+        await issueLogService.recordFeedback(
+            "统一印章尺寸完成",
+            category: .stampImport,
+            context: [
+                "documentID": session.document.id.uuidString,
+                "scope": scope == .global ? "global" : "activePage",
+                "updatedCount": String(updatedCount),
+                "targetWidthMM": String(format: "%.2f", targetWidth),
+                "targetHeightMM": String(format: "%.2f", targetHeight),
+                "activePageIndex": String(session.activePageIndex)
+            ]
+        )
     }
 
     private func scheduleAutoSave() {

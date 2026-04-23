@@ -187,9 +187,11 @@ struct EditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("本轮已接入签名素材链路，后续继续完善骑缝章与统一尺寸能力。")
+                Text("本轮已接入签名链路与统一尺寸能力，下一步继续完善骑缝章。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                stampSizeSyncPanel
             }
             .padding(.horizontal)
 
@@ -282,6 +284,44 @@ struct EditorView: View {
             }
 
             Text("最近回执：\(viewModel.signatureReplaceReceiptMessage)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var stampSizeSyncPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("统一所有印章尺寸")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(viewModel.stampSizeSyncTargetText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button("本页统一") {
+                    Task {
+                        await viewModel.unifyStampSizesOnActivePage()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .font(.caption2)
+                .disabled(!viewModel.canUnifyStampSizesOnActivePage)
+
+                Button("全稿统一") {
+                    Task {
+                        await viewModel.unifyStampSizesGlobally()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .font(.caption2)
+                .disabled(!viewModel.canUnifyStampSizesGlobally)
+            }
+
+            Text("执行结果：\(viewModel.stampSizeSyncStatusMessage)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

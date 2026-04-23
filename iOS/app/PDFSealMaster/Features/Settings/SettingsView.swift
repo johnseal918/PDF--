@@ -6,9 +6,12 @@ struct SettingsView: View {
     let onOpenHelp: () -> Void
     let onClose: () -> Void
 
+    private let releaseReadinessService = ReleaseReadinessService()
+
     @State private var entitlementState: EntitlementState = .unknown
     @State private var entitlementMessage = "正在同步权益状态..."
     @State private var isProcessingPurchaseAction = false
+    @State private var releaseReadinessChecks: [ReleaseReadinessCheck] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -74,6 +77,59 @@ struct SettingsView: View {
                 .padding(.top, 4)
             }
 
+            GroupBox("提审准备（M5）") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("进度：\(releaseReadinessCompletedCount)/\(releaseReadinessTotalCount)")
+                        .font(.subheadline.weight(.medium))
+
+                    if releaseReadinessChecks.isEmpty {
+                        Text("尚未加载提审检查结果。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(releaseReadinessChecks) { check in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: check.status == .pass ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                        .foregroundStyle(check.status == .pass ? .green : .orange)
+                                    Text(check.title)
+                                        .font(.caption.weight(.semibold))
+                                }
+                                Text(check.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if check.status != .pass {
+                                    Text("建议：\(check.recommendation)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Text("上架素材清单（手动）")
+                        .font(.caption.weight(.semibold))
+                    Toggle("1024x1024 App Icon 已完成", isOn: $settings.hasPreparedAppIcon1024)
+                    Toggle("iPhone 6.1 英寸截图已完成", isOn: $settings.hasPreparedIPhone61Screenshots)
+                    Toggle("iPhone 6.7 英寸截图已完成", isOn: $settings.hasPreparedIPhone67Screenshots)
+                    Toggle("隐私政策 URL 已准备", isOn: $settings.hasPreparedPrivacyPolicyURL)
+
+                    HStack(spacing: 10) {
+                        Button("刷新提审检查") {
+                            refreshReleaseReadinessChecks()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Text("建议在 TestFlight 前完成全部检查项。")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 4)
+            }
+
             if isProcessingPurchaseAction {
                 ProgressView("处理中...")
                     .font(.caption)
@@ -84,7 +140,31 @@ struct SettingsView: View {
         .padding(20)
         .task {
             await refreshEntitlementStatus()
+            refreshReleaseReadinessChecks()
         }
+    }
+
+    private var autoReadinessPassCount: Int {
+        releaseReadinessChecks.filter { $0.status == .pass }.count
+    }
+
+    private var manualReadinessPassCount: Int {
+        [
+            settings.hasPreparedAppIcon1024,
+            settings.hasPreparedIPhone61Screenshots,
+            settings.hasPreparedIPhone67Screenshots,
+            settings.hasPreparedPrivacyPolicyURL
+        ]
+        .filter { $0 }
+        .count
+    }
+
+    private var releaseReadinessCompletedCount: Int {
+        autoReadinessPassCount + manualReadinessPassCount
+    }
+
+    private var releaseReadinessTotalCount: Int {
+        releaseReadinessChecks.count + 4
     }
 
     private func refreshEntitlementStatus() async {
@@ -110,5 +190,9 @@ struct SettingsView: View {
         } catch {
             entitlementMessage = "恢复购买失败，请稍后重试。"
         }
+    }
+
+    private func refreshReleaseReadinessChecks() {
+        releaseReadinessChecks = releaseReadinessService.evaluateAutoChecks()
     }
 }

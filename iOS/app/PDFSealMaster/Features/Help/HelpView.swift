@@ -28,6 +28,10 @@ struct HelpView: View {
                             question: "怎么恢复购买？",
                             answer: "在设置页中点击“恢复购买”，系统会同步当前 Apple ID 的有效权益。"
                         )
+                        faqItem(
+                            question: "什么时候可以提审 TestFlight？",
+                            answer: "建议先在“设置 > 提审准备（M5）”里完成自动检查与上架素材清单，再进入提审。"
+                        )
                     }
                     .padding(.top, 4)
                 }
@@ -46,7 +50,7 @@ struct HelpView: View {
                 GroupBox("版本信息") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("产品：PDF Seal Master（iPhone）")
-                        Text("阶段：M5（付费与上线准备）")
+                        Text("阶段：M5.4（提审准备）")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)

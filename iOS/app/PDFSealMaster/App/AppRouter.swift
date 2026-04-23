@@ -6,6 +6,8 @@ final class AppRouter: ObservableObject {
         case editor(EditorSession)
         case stampImport
         case signaturePad
+        case settings
+        case help
     }
 
     @Published var currentRoute: Route = .home
@@ -24,5 +26,13 @@ final class AppRouter: ObservableObject {
 
     func showSignaturePad() {
         currentRoute = .signaturePad
+    }
+
+    func showSettings() {
+        currentRoute = .settings
+    }
+
+    func showHelp() {
+        currentRoute = .help
     }
 }

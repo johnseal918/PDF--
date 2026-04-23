@@ -3,9 +3,11 @@ import UniformTypeIdentifiers
 
 struct StampImportView: View {
     let stampAssetService: StampAssetService
+    let purchaseService: PurchaseService
     let issueLogService: IssueLogService
     let onClose: () -> Void
     private let normalizationService: StampNormalizationService = DefaultStampNormalizationService()
+    private let freeCustomStampLimit = 3
 
     @State private var workingAsset: StampAsset?
     @State private var savedAssetCount = 0
@@ -19,6 +21,10 @@ struct StampImportView: View {
     @State private var cropInsetRightPX = 0.0
     @State private var cropInsetBottomPX = 0.0
     @State private var cropDragStartInsets: CropInsets?
+    @State private var entitlementState: EntitlementState = .unknown
+    @State private var isPaywallPresented = false
+    @State private var purchaseStatusMessage = "权益状态待同步。"
+    @State private var isPurchaseInProgress = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -51,6 +57,16 @@ struct StampImportView: View {
             Text("当前素材池印章数：\(savedAssetCount)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Text("当前权益：\(entitlementState.displayName)")
+                .font(.caption2)
+                .foregroundStyle(entitlementState == .pro ? Color.green : Color.orange)
+
+            if entitlementState != .pro {
+                Text("免费版最多可保存 \(freeCustomStampLimit) 个自定义印章素材。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             if let workingAsset {
                 VStack(alignment: .leading, spacing: 8) {
@@ -109,6 +125,28 @@ struct StampImportView: View {
         .padding(20)
         .task {
             await refreshAssetCount()
+            await refreshEntitlementStatus()
+        }
+        .sheet(isPresented: $isPaywallPresented) {
+            PaywallView(
+                trigger: .customStampLibrary,
+                entitlementState: entitlementState,
+                statusMessage: purchaseStatusMessage,
+                isProcessing: isPurchaseInProgress,
+                onPurchase: {
+                    Task {
+                        await purchaseProFromPaywall()
+                    }
+                },
+                onRestore: {
+                    Task {
+                        await restorePurchasesFromPaywall()
+                    }
+                },
+                onClose: {
+                    isPaywallPresented = false
+                }
+            )
         }
         .fileImporter(
             isPresented: $isShowingImporter,
@@ -123,6 +161,73 @@ struct StampImportView: View {
     private func refreshAssetCount() async {
         let assets = (try? await stampAssetService.loadAllStampAssets()) ?? []
         savedAssetCount = assets.count
+    }
+
+    private func refreshEntitlementStatus() async {
+        entitlementState = await purchaseService.currentEntitlements()
+        purchaseStatusMessage = entitlementState == .pro
+            ? "专业版已激活，可保存更多印章素材。"
+            : "免费版超过基础素材数量后需升级专业版。"
+    }
+
+    private func purchaseProFromPaywall() async {
+        isPurchaseInProgress = true
+        defer { isPurchaseInProgress = false }
+
+        do {
+            try await purchaseService.purchasePro()
+            await refreshEntitlementStatus()
+            isPaywallPresented = false
+            statusMessage = "购买成功，已解锁扩展素材库。"
+            await issueLogService.recordFeedback(
+                "印章素材库购买成功",
+                category: .purchase,
+                context: [
+                    "savedAssetCount": String(savedAssetCount),
+                    "trigger": PaywallTrigger.customStampLibrary.displayTitle
+                ]
+            )
+        } catch {
+            purchaseStatusMessage = "购买失败，请稍后重试。"
+            await issueLogService.recordError(
+                "印章素材库购买失败",
+                error: error,
+                category: .purchase,
+                context: ["savedAssetCount": String(savedAssetCount)]
+            )
+        }
+    }
+
+    private func restorePurchasesFromPaywall() async {
+        isPurchaseInProgress = true
+        defer { isPurchaseInProgress = false }
+
+        do {
+            try await purchaseService.restorePurchases()
+            await refreshEntitlementStatus()
+            if entitlementState == .pro {
+                isPaywallPresented = false
+                statusMessage = "恢复成功，已解锁扩展素材库。"
+            } else {
+                purchaseStatusMessage = "未检测到可恢复的购买记录。"
+            }
+            await issueLogService.recordFeedback(
+                "印章素材库恢复购买完成",
+                category: .purchase,
+                context: [
+                    "savedAssetCount": String(savedAssetCount),
+                    "entitlement": entitlementState.displayName
+                ]
+            )
+        } catch {
+            purchaseStatusMessage = "恢复失败，请稍后重试。"
+            await issueLogService.recordError(
+                "印章素材库恢复购买失败",
+                error: error,
+                category: .purchase,
+                context: ["savedAssetCount": String(savedAssetCount)]
+            )
+        }
     }
 
     private func handleStampFilePick(_ result: Result<URL, Error>) async {
@@ -245,6 +350,22 @@ struct StampImportView: View {
 
     private func finalizeAndSaveStamp() async {
         guard let workingAsset else {
+            return
+        }
+
+        await refreshEntitlementStatus()
+        if entitlementState != .pro && savedAssetCount >= freeCustomStampLimit {
+            isPaywallPresented = true
+            statusMessage = "免费版最多保存 \(freeCustomStampLimit) 个自定义印章，请升级专业版继续保存。"
+            await issueLogService.recordFeedback(
+                "触发印章素材数量上限拦截",
+                category: .purchase,
+                context: [
+                    "savedAssetCount": String(savedAssetCount),
+                    "limit": String(freeCustomStampLimit),
+                    "trigger": PaywallTrigger.customStampLibrary.displayTitle
+                ]
+            )
             return
         }
 

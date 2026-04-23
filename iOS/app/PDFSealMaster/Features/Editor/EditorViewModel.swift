@@ -1379,6 +1379,8 @@ final class EditorViewModel: ObservableObject {
             return .bindingStamp
         case .unifyStampSize:
             return .unifyStampSize
+        case .customStampLibrary:
+            return .customStampLibrary
         }
     }
 

@@ -17,6 +17,7 @@ enum ProFeature: Equatable {
     case export
     case bindingStamp
     case unifyStampSize
+    case customStampLibrary
 }
 
 enum EntitlementState: Equatable {
@@ -29,6 +30,7 @@ enum PaywallTrigger: Equatable {
     case export
     case bindingStamp
     case unifyStampSize
+    case customStampLibrary
 }
 
 extension EntitlementState {
@@ -53,6 +55,8 @@ extension PaywallTrigger {
             return "骑缝章"
         case .unifyStampSize:
             return "统一所有印章尺寸"
+        case .customStampLibrary:
+            return "自定义印章素材库"
         }
     }
 
@@ -64,6 +68,8 @@ extension PaywallTrigger {
             return "骑缝章是首发差异化能力，当前仅对专业版开放。"
         case .unifyStampSize:
             return "批量统一印章尺寸用于正式文档处理，当前仅对专业版开放。"
+        case .customStampLibrary:
+            return "免费版仅支持基础数量的自定义印章素材，继续保存更多素材需升级专业版。"
         }
     }
 }

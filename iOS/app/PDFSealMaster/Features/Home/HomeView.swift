@@ -49,6 +49,7 @@ struct HomeView: View {
                 case .stampImport:
                     StampImportView(
                         stampAssetService: stampAssetService,
+                        purchaseService: purchaseService,
                         issueLogService: issueLogService,
                         onClose: { router.showHome() }
                     )
@@ -60,6 +61,17 @@ struct HomeView: View {
                         onOpenDraft: { documentID in
                             await openDraftFromSignaturePad(documentID)
                         },
+                        onClose: { router.showHome() }
+                    )
+                case .settings:
+                    SettingsView(
+                        settings: settings,
+                        purchaseService: purchaseService,
+                        onOpenHelp: { router.showHelp() },
+                        onClose: { router.showHome() }
+                    )
+                case .help:
+                    HelpView(
                         onClose: { router.showHome() }
                     )
                 }
@@ -178,6 +190,12 @@ struct HomeView: View {
 
             Button("进入手写签名页") {
                 router.showSignaturePad()
+            }
+            .buttonStyle(.bordered)
+            .disabled(isImportingDocument)
+
+            Button("设置与帮助") {
+                router.showSettings()
             }
             .buttonStyle(.bordered)
             .disabled(isImportingDocument)

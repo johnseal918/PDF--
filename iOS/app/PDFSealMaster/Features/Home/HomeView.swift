@@ -6,6 +6,7 @@ struct HomeView: View {
     @ObservedObject var router: AppRouter
     @ObservedObject var settings: AppSettings
     let documentService: DocumentService
+    let documentRepository: DocumentRepository
     let draftRecoveryService: DraftRecoveryService
     let stampAssetService: StampAssetService
     let signatureAssetService: SignatureAssetService
@@ -15,6 +16,7 @@ struct HomeView: View {
 
     @State private var latestDraftSession: EditorSession?
     @State private var draftSummaries: [DraftSnapshotSummary] = []
+    @State private var recentDocumentSummaries: [RecentDocumentSummary] = []
     @State private var isLoadingDraft = false
     @State private var isImportingDocument = false
     @State private var isShowingPDFImporter = false
@@ -126,37 +128,12 @@ struct HomeView: View {
             Text("iPhone 首发版已启动")
                 .font(.title2.weight(.semibold))
 
-            Text("当前阶段：M4 已收口，正在推进 M5（付费与上线准备）。")
+            Text("当前阶段：M5 已收口，正在推进 M6（首发包后增强）。")
                 .font(.body)
                 .foregroundStyle(.secondary)
 
-            Button("继续最近草稿") {
-                guard let latestDraftSession else {
-                    return
-                }
-                router.showEditor(session: latestDraftSession)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(latestDraftSession == nil || isLoadingDraft)
-
-            Text(draftStatusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            if let latestDraftSession {
-                Text("最近草稿：\(latestDraftSession.document.name)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let draftActionMessage {
-                Text(draftActionMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !draftSummaries.isEmpty {
-                recentDraftsSection
+            if settings.prefersRecentFilesOnHome {
+                recentDraftsBlock
             }
 
             Button("导入 PDF（文件）") {
@@ -200,6 +177,10 @@ struct HomeView: View {
             .buttonStyle(.bordered)
             .disabled(isImportingDocument)
 
+            if !settings.prefersRecentFilesOnHome {
+                recentDraftsBlock
+            }
+
             if isImportingDocument {
                 ProgressView("正在导入...")
                     .font(.caption)
@@ -216,6 +197,99 @@ struct HomeView: View {
         .padding(20)
     }
 
+    private var recentDraftsBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button("继续最近草稿") {
+                guard let latestDraftSession else {
+                    return
+                }
+                router.showEditor(session: latestDraftSession)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(latestDraftSession == nil || isLoadingDraft)
+
+            Text(draftStatusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(settings.prefersRecentFilesOnHome ? "当前排序：最近文件优先" : "当前排序：功能入口优先")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if let latestDraftSession {
+                Text("最近草稿：\(latestDraftSession.document.name)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let draftActionMessage {
+                Text(draftActionMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !recentDocumentSummaries.isEmpty {
+                recentFilesSection
+            }
+
+            if !draftSummaries.isEmpty {
+                recentDraftsSection
+            } else if recentDocumentSummaries.isEmpty {
+                Text("暂无最近文件（草稿）。导入文档并进入编辑后将自动生成。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var recentFilesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("最近文件（文档）")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(Array(recentDocumentSummaries.prefix(5)), id: \.id) { summary in
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(summary.documentName)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                        Text("类型：\(sourceTypeTitle(summary.sourceType))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("更新：\(summary.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("页数：\(summary.pageCount)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button("打开") {
+                        Task {
+                            await openRecentDocument(summary)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+                    .disabled(isLoadingDraft || isImportingDocument)
+
+                    Button("移除") {
+                        Task {
+                            await removeRecentDocument(summary)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+                    .disabled(isLoadingDraft || isImportingDocument)
+                }
+                .padding(10)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
     private var draftStatusText: String {
         if isLoadingDraft {
             return "正在检查最近草稿..."
@@ -230,7 +304,7 @@ struct HomeView: View {
 
     private var recentDraftsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("最近草稿")
+            Text("最近文件（可恢复草稿）")
                 .font(.subheadline.weight(.semibold))
 
             ForEach(Array(draftSummaries.prefix(5)), id: \.id) { summary in
@@ -296,6 +370,18 @@ struct HomeView: View {
                 context: ["scope": "loadDraftSummaries"]
             )
         }
+
+        do {
+            recentDocumentSummaries = try await documentRepository.loadRecentSummaries(limit: 20)
+        } catch {
+            recentDocumentSummaries = []
+            await issueLogService.recordError(
+                "加载最近文件失败",
+                error: error,
+                category: .documentImport,
+                context: ["scope": "loadRecentSummaries"]
+            )
+        }
         isLoadingDraft = false
     }
 
@@ -318,8 +404,14 @@ struct HomeView: View {
                 return
             }
 
+            var trackedDocument = session.document
+            trackedDocument.updatedAt = Date()
+            try await documentRepository.save(document: trackedDocument)
+
+            var trackedSession = session
+            trackedSession.document = trackedDocument
             draftActionMessage = "已恢复草稿：\(summary.documentName)"
-            latestDraftSession = session
+            latestDraftSession = trackedSession
             await issueLogService.recordFeedback(
                 "草稿恢复成功（从列表）",
                 category: .draftRecovery,
@@ -328,7 +420,7 @@ struct HomeView: View {
                     "documentName": summary.documentName
                 ]
             )
-            router.showEditor(session: session)
+            router.showEditor(session: trackedSession)
         } catch {
             draftActionMessage = "恢复草稿失败，请重试。"
             await issueLogService.recordError(
@@ -357,17 +449,24 @@ struct HomeView: View {
                 return false
             }
 
-            latestDraftSession = session
-            draftActionMessage = "已从签名引用跳转：\(session.document.name)"
+            var trackedDocument = session.document
+            trackedDocument.updatedAt = Date()
+            try await documentRepository.save(document: trackedDocument)
+
+            var trackedSession = session
+            trackedSession.document = trackedDocument
+
+            latestDraftSession = trackedSession
+            draftActionMessage = "已从签名引用跳转：\(trackedSession.document.name)"
             await issueLogService.recordFeedback(
                 "从签名引用跳转草稿成功",
                 category: .draftRecovery,
                 context: [
-                    "documentID": session.document.id.uuidString,
-                    "documentName": session.document.name
+                    "documentID": trackedSession.document.id.uuidString,
+                    "documentName": trackedSession.document.name
                 ]
             )
-            router.showEditor(session: session)
+            router.showEditor(session: trackedSession)
             return true
         } catch {
             draftActionMessage = "跳转草稿失败，请重试。"
@@ -408,11 +507,104 @@ struct HomeView: View {
         }
     }
 
+    private func openRecentDocument(_ summary: RecentDocumentSummary) async {
+        isLoadingDraft = true
+        defer { isLoadingDraft = false }
+
+        do {
+            if let draftSession = try await draftRecoveryService.restoreDraft(for: summary.documentID) {
+                var trackedDocument = draftSession.document
+                trackedDocument.updatedAt = Date()
+                try await documentRepository.save(document: trackedDocument)
+
+                var trackedSession = draftSession
+                trackedSession.document = trackedDocument
+                latestDraftSession = trackedSession
+                draftActionMessage = "已打开最近文件（草稿）：\(summary.documentName)"
+                router.showEditor(session: trackedSession)
+                return
+            }
+
+            guard let document = try await documentRepository.load(documentID: summary.documentID) else {
+                draftActionMessage = "最近文件不存在，已刷新列表。"
+                await issueLogService.recordFeedback(
+                    "最近文件不存在，刷新列表",
+                    category: .documentImport,
+                    context: [
+                        "documentID": summary.documentID.uuidString,
+                        "documentName": summary.documentName
+                    ]
+                )
+                await refreshLatestDraft()
+                return
+            }
+
+            await openEditor(with: document)
+            draftActionMessage = "已打开最近文件：\(summary.documentName)"
+        } catch {
+            draftActionMessage = "打开最近文件失败，请重试。"
+            await issueLogService.recordError(
+                "打开最近文件失败",
+                error: error,
+                category: .documentImport,
+                context: [
+                    "documentID": summary.documentID.uuidString,
+                    "documentName": summary.documentName
+                ]
+            )
+        }
+    }
+
+    private func removeRecentDocument(_ summary: RecentDocumentSummary) async {
+        do {
+            try await documentRepository.remove(documentID: summary.documentID)
+            recentDocumentSummaries.removeAll { $0.documentID == summary.documentID }
+            draftActionMessage = "已移除最近文件：\(summary.documentName)"
+            await issueLogService.recordFeedback(
+                "最近文件已移除",
+                category: .documentImport,
+                context: [
+                    "documentID": summary.documentID.uuidString,
+                    "documentName": summary.documentName
+                ]
+            )
+        } catch {
+            draftActionMessage = "移除最近文件失败，请重试。"
+            await issueLogService.recordError(
+                "移除最近文件失败",
+                error: error,
+                category: .documentImport,
+                context: [
+                    "documentID": summary.documentID.uuidString,
+                    "documentName": summary.documentName
+                ]
+            )
+        }
+    }
+
     private func openEditor(with document: DocumentModel) async {
+        var trackedDocument = document
+        trackedDocument.updatedAt = Date()
+
+        do {
+            try await documentRepository.save(document: trackedDocument)
+        } catch {
+            await issueLogService.recordError(
+                "写入最近文件失败",
+                error: error,
+                category: .documentImport,
+                context: [
+                    "documentID": trackedDocument.id.uuidString,
+                    "documentName": trackedDocument.name
+                ]
+            )
+        }
+
         let session = EditorSession(
-            document: document,
+            document: trackedDocument,
             selectedObjectID: nil,
-            activePageIndex: 0
+            activePageIndex: 0,
+            previewAppearance: settings.defaultPreviewAppearance
         )
 
         var didPersistDraft = false
@@ -444,6 +636,15 @@ struct HomeView: View {
                 latestDraftSession = session
             }
             router.showEditor(session: session)
+        }
+    }
+
+    private func sourceTypeTitle(_ sourceType: DocumentSourceType) -> String {
+        switch sourceType {
+        case .pdf:
+            return "PDF"
+        case .images:
+            return "图片"
         }
     }
 

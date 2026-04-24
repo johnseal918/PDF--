@@ -78,3 +78,8 @@ enum PreviewMode: String, Codable, Hashable {
     case original
     case matchedLowRes
 }
+
+enum PreviewAppearance: String, Codable, Hashable {
+    case standard
+    case grayscaleScan
+}

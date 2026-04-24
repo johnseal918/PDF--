@@ -5,6 +5,7 @@ final class AppSettings: ObservableObject {
         static let prefersRecentFilesOnHome = "app.settings.prefersRecentFilesOnHome"
         static let autoSaveDrafts = "app.settings.autoSaveDrafts"
         static let defaultPreviewMode = "app.settings.defaultPreviewMode"
+        static let defaultPreviewAppearance = "app.settings.defaultPreviewAppearance"
         static let hasPreparedAppIcon1024 = "app.settings.hasPreparedAppIcon1024"
         static let hasPreparedIPhone61Screenshots = "app.settings.hasPreparedIPhone61Screenshots"
         static let hasPreparedIPhone67Screenshots = "app.settings.hasPreparedIPhone67Screenshots"
@@ -23,6 +24,10 @@ final class AppSettings: ObservableObject {
 
     @Published var defaultPreviewMode: PreviewMode {
         didSet { defaults.set(defaultPreviewMode.rawValue, forKey: Keys.defaultPreviewMode) }
+    }
+
+    @Published var defaultPreviewAppearance: PreviewAppearance {
+        didSet { defaults.set(defaultPreviewAppearance.rawValue, forKey: Keys.defaultPreviewAppearance) }
     }
 
     @Published var hasPreparedAppIcon1024: Bool {
@@ -48,6 +53,9 @@ final class AppSettings: ObservableObject {
         self.defaultPreviewMode = PreviewMode(
             rawValue: defaults.string(forKey: Keys.defaultPreviewMode) ?? PreviewMode.original.rawValue
         ) ?? .original
+        self.defaultPreviewAppearance = PreviewAppearance(
+            rawValue: defaults.string(forKey: Keys.defaultPreviewAppearance) ?? PreviewAppearance.standard.rawValue
+        ) ?? .standard
 
         self.hasPreparedAppIcon1024 = defaults.bool(forKey: Keys.hasPreparedAppIcon1024)
         self.hasPreparedIPhone61Screenshots = defaults.bool(forKey: Keys.hasPreparedIPhone61Screenshots)

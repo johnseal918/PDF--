@@ -33,6 +33,12 @@ struct SettingsView: View {
                         Text("匹配低分辨率").tag(PreviewMode.matchedLowRes)
                     }
                     .pickerStyle(.segmented)
+
+                    Picker("预览风格", selection: $settings.defaultPreviewAppearance) {
+                        Text("标准").tag(PreviewAppearance.standard)
+                        Text("灰度扫描").tag(PreviewAppearance.grayscaleScan)
+                    }
+                    .pickerStyle(.segmented)
                 }
                 .padding(.top, 4)
             }

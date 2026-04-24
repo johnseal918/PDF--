@@ -116,7 +116,7 @@ struct EditorView: View {
     private var canvas: some View {
         VStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 24)
-                .fill(Color(.secondarySystemBackground))
+                .fill(canvasBackgroundColor)
                 .overlay(
                     VStack(spacing: 10) {
                         Text("A4 统一画布")
@@ -128,6 +128,14 @@ struct EditorView: View {
 
                         Text("预览模式：\(viewModel.document.previewMode.displayName)")
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Text("预览风格：\(viewModel.previewAppearanceDisplayText)")
+                            .font(.caption)
+                            .foregroundStyle(viewModel.isScanPreviewEnabled ? Color.orange : Color.secondary)
+
+                        Text(viewModel.previewAppearanceHintText)
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
 
                         Text(viewModel.previewJudgementScaleText)
@@ -232,7 +240,7 @@ struct EditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("M4 已收口，当前进入 M5：付费与上线准备。")
+                Text("M5 已收口，当前进入 M6：首发包后增强。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
@@ -271,6 +279,9 @@ struct EditorView: View {
             }
             toolbarItem(title: "预览") {
                 viewModel.togglePreviewMode()
+            }
+            toolbarItem(title: "扫描风") {
+                viewModel.togglePreviewAppearance()
             }
             toolbarItem(title: "实尺") {
                 Task {
@@ -567,6 +578,13 @@ struct EditorView: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+    }
+
+    private var canvasBackgroundColor: Color {
+        if viewModel.isScanPreviewEnabled {
+            return Color(.systemGray5)
+        }
+        return Color(.secondarySystemBackground)
     }
 
     private var objectAdjustmentPanel: some View {

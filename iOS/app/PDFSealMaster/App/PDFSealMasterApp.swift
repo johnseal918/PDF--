@@ -6,6 +6,7 @@ struct PDFSealMasterApp: App {
     @StateObject private var settings = AppSettings()
 
     private let documentService: DocumentService = DefaultDocumentService()
+    private let documentRepository: DocumentRepository = FileDocumentRepository()
     private let draftRecoveryService: DraftRecoveryService = FileDraftRecoveryService()
     private let stampAssetService: StampAssetService = FileStampAssetService()
     private let signatureAssetService: SignatureAssetService = FileSignatureAssetService()
@@ -26,6 +27,7 @@ struct PDFSealMasterApp: App {
                 router: router,
                 settings: settings,
                 documentService: documentService,
+                documentRepository: documentRepository,
                 draftRecoveryService: draftRecoveryService,
                 stampAssetService: stampAssetService,
                 signatureAssetService: signatureAssetService,

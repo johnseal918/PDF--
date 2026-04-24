@@ -223,6 +223,23 @@ final class EditorViewModel: ObservableObject {
         "模拟视觉比例：\(String(format: "%.0f%%", previewModeInspectionResult.simulatedScale * 100))"
     }
 
+    var previewAppearanceDisplayText: String {
+        session.previewAppearance.displayName
+    }
+
+    var previewAppearanceHintText: String {
+        switch session.previewAppearance {
+        case .standard:
+            return "当前为标准预览风格。"
+        case .grayscaleScan:
+            return "当前为灰度扫描风，仅影响预览，不改变坐标与导出结果。"
+        }
+    }
+
+    var isScanPreviewEnabled: Bool {
+        session.previewAppearance == .grayscaleScan
+    }
+
     var actualSizeInspectionStatusText: String {
         guard isActualSizeInspectionEnabled else {
             return "未启用实际尺寸检查。"
@@ -553,6 +570,11 @@ final class EditorViewModel: ObservableObject {
 
     func togglePreviewMode() {
         session.document.previewMode = session.document.previewMode == .original ? .matchedLowRes : .original
+        touchSession()
+    }
+
+    func togglePreviewAppearance() {
+        session.previewAppearance = session.previewAppearance == .standard ? .grayscaleScan : .standard
         touchSession()
     }
 

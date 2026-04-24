@@ -59,6 +59,7 @@ struct EditorSession: Codable, Hashable {
     var document: DocumentModel
     var selectedObjectID: UUID?
     var activePageIndex: Int
+    var previewAppearance: PreviewAppearance = .standard
     var signatureReplaceReceiptMessage: String = "暂无替换回执。"
 
     private enum CodingKeys: String, CodingKey {
@@ -66,6 +67,7 @@ struct EditorSession: Codable, Hashable {
         case document
         case selectedObjectID
         case activePageIndex
+        case previewAppearance
         case signatureReplaceReceiptMessage
     }
 
@@ -74,12 +76,14 @@ struct EditorSession: Codable, Hashable {
         document: DocumentModel,
         selectedObjectID: UUID?,
         activePageIndex: Int,
+        previewAppearance: PreviewAppearance = .standard,
         signatureReplaceReceiptMessage: String = "暂无替换回执。"
     ) {
         self.schemaVersion = schemaVersion
         self.document = document
         self.selectedObjectID = selectedObjectID
         self.activePageIndex = activePageIndex
+        self.previewAppearance = previewAppearance
         self.signatureReplaceReceiptMessage = signatureReplaceReceiptMessage
     }
 
@@ -89,6 +93,7 @@ struct EditorSession: Codable, Hashable {
         document = try container.decode(DocumentModel.self, forKey: .document)
         selectedObjectID = try container.decodeIfPresent(UUID.self, forKey: .selectedObjectID)
         activePageIndex = try container.decode(Int.self, forKey: .activePageIndex)
+        previewAppearance = try container.decodeIfPresent(PreviewAppearance.self, forKey: .previewAppearance) ?? .standard
         signatureReplaceReceiptMessage = try container.decodeIfPresent(String.self, forKey: .signatureReplaceReceiptMessage)
             ?? "暂无替换回执。"
     }
@@ -99,6 +104,7 @@ struct EditorSession: Codable, Hashable {
         try container.encode(document, forKey: .document)
         try container.encodeIfPresent(selectedObjectID, forKey: .selectedObjectID)
         try container.encode(activePageIndex, forKey: .activePageIndex)
+        try container.encode(previewAppearance, forKey: .previewAppearance)
         try container.encode(signatureReplaceReceiptMessage, forKey: .signatureReplaceReceiptMessage)
     }
 }

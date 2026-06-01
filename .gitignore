@@ -46,3 +46,18 @@ DerivedData/
 *.p8
 *.jks
 *.keystore
+
+# Internal project governance and planning records
+/logs/
+/iOS/docs/
+/*.md
+!/README.md
+
+# Local user assets and templates
+/assets/stamps/
+/config/assets.json
+/config/templates/
+
+# Scratch probes
+/_test_bind.py
+/_test_coor.py

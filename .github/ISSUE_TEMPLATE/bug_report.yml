@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible problem in PDF Seal Master.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Do not upload private documents, real stamps, real signatures, or secrets.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use a safe public or synthetic sample when possible.
+      placeholder: |
+        1. Open ...
+        2. Add ...
+        3. Export ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Desktop import
+        - Desktop preview
+        - Stamp or signature placement
+        - Binding stamp
+        - Image processing
+        - PDF export
+        - iOS code
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "Windows 11, Python 3.12, PySide6 ..."
+    validations:
+      required: false

@@ -1,5 +1,10 @@
 # PDF Seal Master
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.x-3776AB.svg)](https://www.python.org/)
+[![Desktop](https://img.shields.io/badge/Desktop-PySide6-41CD52.svg)](https://doc.qt.io/qtforpython-6/)
+[![iOS](https://img.shields.io/badge/iOS-SwiftUI-FA7343.svg)](https://developer.apple.com/xcode/swiftui/)
+
 PDF Seal Master 是一个本地运行的 PDF / 图片盖章与签名处理工具。项目包含桌面端原型和 iOS 端工程骨架，重点面向常见办公场景中的文档导入、印章/签名素材管理、可视化排版和导出处理。
 
 > 请只在你有权处理的文档和素材上使用本项目。印章、签名和合同类文件通常具有法律和隐私风险，使用前请确认授权和合规边界。
@@ -115,6 +120,12 @@ iOS 端仍处于持续开发阶段，部分原生能力需要在 macOS / Xcode �
 
 如果你需要测试印章或签名功能，请自行准备具备使用授权的 PNG 素材。
 
+## 贡献
+
+欢迎提交 bug report、feature request、测试补充和文档改进。请先阅读 [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md)，并确保不要上传私人文档、真实印章、真实签名、日志或本地配置。
+
+公开路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+
 ## 许可证
 
-当前仓库尚未附带开源许可证。未经作者明确授权，请不要将本项目用于再分发或商业用途。
+本项目使用 [MIT License](LICENSE)。

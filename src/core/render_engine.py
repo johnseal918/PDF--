@@ -37,12 +37,9 @@ class RenderEngine:
 
     @staticmethod
     def multiply_blend(bg_image: Image.Image, fg_image: Image.Image, position: tuple[int, int]) -> Image.Image:
-        """Multiply blend fg onto bg at top-left position."""
+        """Composite fg onto bg at top-left position (preview-consistent alpha over)."""
         bg = bg_image.convert("RGBA")
         fg = fg_image.convert("RGBA")
-
-        fg_np = np.array(fg).astype(np.float32) / 255.0
-        bg_np = np.array(bg).astype(np.float32) / 255.0
 
         bg_width, bg_height = bg.size
         fg_width, fg_height = fg.size
@@ -60,16 +57,11 @@ class RenderEngine:
         fg_x_max = fg_x_min + (x_max - x_min)
         fg_y_max = fg_y_min + (y_max - y_min)
 
-        bg_roi = bg_np[y_min:y_max, x_min:x_max]
-        fg_roi = fg_np[fg_y_min:fg_y_max, fg_x_min:fg_x_max]
-
-        fg_alpha = fg_roi[:, :, 3:4]
-        color_multiply = bg_roi[:, :, :3] * fg_roi[:, :, :3]
-        blended_roi_rgb = color_multiply * fg_alpha + bg_roi[:, :, :3] * (1.0 - fg_alpha)
-        bg_np[y_min:y_max, x_min:x_max, :3] = blended_roi_rgb
-
-        final_out = np.clip(bg_np * 255, 0, 255).astype(np.uint8)
-        return Image.fromarray(final_out, "RGBA")
+        bg_crop = bg.crop((x_min, y_min, x_max, y_max))
+        fg_crop = fg.crop((fg_x_min, fg_y_min, fg_x_max, fg_y_max))
+        blended = Image.alpha_composite(bg_crop, fg_crop)
+        bg.paste(blended, (x_min, y_min))
+        return bg
 
     @staticmethod
     def apply_stamp_dirt(stamp_image: Image.Image, intensity: float = 0.15) -> Image.Image:
@@ -275,6 +267,7 @@ class RenderEngine:
                     cv_img,
                     threshold=decolor_params.get("threshold", 120),
                     mode=decolor_params.get("mode", "otsu"),
+                    red_preserve_strength=decolor_params.get("red_preserve_strength", 0.85),
                 )
                 cv_img = CVProcessor.add_paper_noise(
                     cv_img,

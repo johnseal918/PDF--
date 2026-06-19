@@ -76,6 +76,7 @@ class PropertyPanel(QWidget):
         self.slider_thresh.setValue(120)
         self.label_thresh_val = QLabel("120")
         self.slider_thresh.valueChanged.connect(self._on_thresh_slide)
+        self.slider_thresh.valueChanged.connect(self._emit_decolor_params)
         self.slider_thresh.sliderReleased.connect(self._emit_decolor_params)
         
         box_th = QHBoxLayout()
@@ -99,6 +100,21 @@ class PropertyPanel(QWidget):
         noise_layout.addRow("纸张纤维噪粒:", box_n)
         decolor_layout.addLayout(noise_layout)
 
+        red_layout = QFormLayout()
+        self.slider_red_preserve = QSlider(Qt.Orientation.Horizontal)
+        self.slider_red_preserve.setRange(0, 100)
+        self.slider_red_preserve.setValue(85)
+        self.label_red_preserve_val = QLabel("85 %")
+        self.slider_red_preserve.valueChanged.connect(self._on_red_preserve_slide)
+        self.slider_red_preserve.valueChanged.connect(self._emit_decolor_params)
+        self.slider_red_preserve.sliderReleased.connect(self._emit_decolor_params)
+
+        box_r = QHBoxLayout()
+        box_r.addWidget(self.slider_red_preserve)
+        box_r.addWidget(self.label_red_preserve_val)
+        red_layout.addRow("红章保留强度:", box_r)
+        decolor_layout.addLayout(red_layout)
+
         box_decolor_actions = QHBoxLayout()
         self.btn_apply_decolor = QPushButton("应用灰度")
         self.btn_apply_decolor.clicked.connect(self._emit_apply_decolor)
@@ -112,7 +128,7 @@ class PropertyPanel(QWidget):
         layout.addWidget(decolor_group)
 
         # 初始化依赖防抖与状态锁
-        self._set_decolor_ui_enabled(False)
+        self._set_decolor_ui_enabled(self.chk_enable_decolor.isChecked())
         self.chk_enable_decolor.toggled.connect(self._set_decolor_ui_enabled)
 
         # ── 骑缝章配置区（M5 阶段填充）──
@@ -276,24 +292,26 @@ class PropertyPanel(QWidget):
 
     def _set_decolor_ui_enabled(self, checked: bool):
         self.combo_mode.setEnabled(checked)
-        self.slider_thresh.setEnabled(checked and self.combo_mode.currentText() == "manual")
+        self.slider_thresh.setEnabled(checked)
         self.slider_noise.setEnabled(checked)
+        self.slider_red_preserve.setEnabled(checked)
         self.btn_apply_decolor.setEnabled(True)
         self.btn_cancel_decolor.setEnabled(True)
 
     def _on_thresh_slide(self, val):
         self.label_thresh_val.setText(str(val))
+        if self.chk_enable_decolor.isChecked() and self.combo_mode.currentText() != "manual":
+            self.combo_mode.setCurrentText("manual")
     
     def _on_noise_slide(self, val):
         self.label_noise_val.setText(f"{val/10.0:.1f} %")
 
+    def _on_red_preserve_slide(self, val):
+        self.label_red_preserve_val.setText(f"{val} %")
+
     def _emit_decolor_params(self):
         """发送配置字典供挂载点提取处理并触发 CVEngine 运算"""
-        # 手动模式卡死 slider 控制
-        if self.combo_mode.currentText() != "manual":
-            self.slider_thresh.setEnabled(False)
-        else:
-            self.slider_thresh.setEnabled(self.chk_enable_decolor.isChecked())
+        self.slider_thresh.setEnabled(self.chk_enable_decolor.isChecked())
 
         params = self._collect_decolor_params()
         self.decolor_params_changed.emit(params)
@@ -304,6 +322,7 @@ class PropertyPanel(QWidget):
             "mode": self.combo_mode.currentText(),
             "threshold": self.slider_thresh.value(),
             "noise_intensity": self.slider_noise.value() / 1000.0,
+            "red_preserve_strength": self.slider_red_preserve.value() / 100.0,
         }
 
     def _emit_apply_decolor(self):
@@ -375,7 +394,13 @@ class PropertyPanel(QWidget):
         if not params:
             return
 
-        widgets = [self.chk_enable_decolor, self.combo_mode, self.slider_thresh, self.slider_noise]
+        widgets = [
+            self.chk_enable_decolor,
+            self.combo_mode,
+            self.slider_thresh,
+            self.slider_noise,
+            self.slider_red_preserve,
+        ]
         for w in widgets:
             w.blockSignals(True)
 
@@ -383,6 +408,7 @@ class PropertyPanel(QWidget):
         mode = params.get("mode", self.combo_mode.currentText())
         threshold = int(params.get("threshold", self.slider_thresh.value()))
         noise = float(params.get("noise_intensity", self.slider_noise.value() / 1000.0))
+        red_preserve = float(params.get("red_preserve_strength", self.slider_red_preserve.value() / 100.0))
 
         self.chk_enable_decolor.setChecked(enabled)
         idx = self.combo_mode.findText(mode)
@@ -391,8 +417,16 @@ class PropertyPanel(QWidget):
         self.slider_thresh.setValue(max(self.slider_thresh.minimum(), min(self.slider_thresh.maximum(), threshold)))
         slider_noise = int(round(noise * 1000))
         self.slider_noise.setValue(max(self.slider_noise.minimum(), min(self.slider_noise.maximum(), slider_noise)))
+        slider_red_preserve = int(round(red_preserve * 100))
+        self.slider_red_preserve.setValue(
+            max(
+                self.slider_red_preserve.minimum(),
+                min(self.slider_red_preserve.maximum(), slider_red_preserve),
+            )
+        )
         self.label_thresh_val.setText(str(self.slider_thresh.value()))
         self.label_noise_val.setText(f"{self.slider_noise.value()/10.0:.1f} %")
+        self.label_red_preserve_val.setText(f"{self.slider_red_preserve.value()} %")
 
         for w in widgets:
             w.blockSignals(False)

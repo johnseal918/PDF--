@@ -43,6 +43,11 @@ class MainWindow(QMainWindow):
         self._contexts = {}
         self._bound_undo_stack = None
         self._tpl_manager = TemplateManager()
+        self._pending_decolor_preview_ctx = None
+        self._decolor_preview_timer = QTimer(self)
+        self._decolor_preview_timer.setSingleShot(True)
+        self._decolor_preview_timer.setInterval(250)
+        self._decolor_preview_timer.timeout.connect(self._render_pending_decolor_preview)
 
         self._setup_menu_bar()
         self._setup_central_area()
@@ -196,6 +201,7 @@ class MainWindow(QMainWindow):
             "mode": self._property_panel.combo_mode.currentText(),
             "threshold": self._property_panel.slider_thresh.value(),
             "noise_intensity": self._property_panel.slider_noise.value() / 1000.0,
+            "red_preserve_strength": self._property_panel.slider_red_preserve.value() / 100.0,
         }
 
     def _read_panel_binding_params(self):
@@ -257,12 +263,27 @@ class MainWindow(QMainWindow):
             str(params.get("mode", "otsu")),
             int(params.get("threshold", 120)),
             round(float(params.get("noise_intensity", 0.03)), 5),
+            round(float(params.get("red_preserve_strength", 0.85)), 5),
         )
 
     def _invalidate_render_cache(self, ctx: dict):
         ctx["render_sig"] = None
         ctx["rendered_pages"] = set()
         ctx["prefetch_pending"] = False
+
+    def _schedule_decolor_preview_render(self, ctx: dict):
+        self._pending_decolor_preview_ctx = ctx
+        self._decolor_preview_timer.start()
+
+    def _render_pending_decolor_preview(self):
+        ctx = self._pending_decolor_preview_ctx
+        self._pending_decolor_preview_ctx = None
+        if not ctx or ctx not in self._contexts.values():
+            return
+        if ctx is not self._current_ctx():
+            return
+        current_page = ctx["canvas_widget"].get_current_page()
+        self._render_ctx_page(ctx, current_page)
 
     # ---------------------- tab/document lifecycle ----------------------
     def _open_document_as_tab(self, file_path: str):
@@ -395,6 +416,7 @@ class MainWindow(QMainWindow):
             cv_img,
             threshold=params.get("threshold", 120),
             mode=params.get("mode", "otsu"),
+            red_preserve_strength=params.get("red_preserve_strength", 0.85),
         )
         cv_img = CVProcessor.add_paper_noise(
             cv_img,
@@ -435,6 +457,7 @@ class MainWindow(QMainWindow):
             cv_img,
             threshold=params.get("threshold", 120),
             mode=params.get("mode", "otsu"),
+            red_preserve_strength=params.get("red_preserve_strength", 0.85),
         )
         cv_img = CVProcessor.add_paper_noise(
             cv_img,
@@ -495,6 +518,13 @@ class MainWindow(QMainWindow):
             return
         ctx["decolor_params"] = params
         self._invalidate_render_cache(ctx)
+        if params.get("enabled"):
+            self._schedule_decolor_preview_render(ctx)
+            return
+
+        current_page = ctx["canvas_widget"].get_current_page()
+        ctx["doc_model"].reset_page(current_page)
+        self._show_ctx_page(ctx, current_page)
 
     def _apply_cv_pipeline(self, params: dict):
         ctx = self._current_ctx()
@@ -527,6 +557,7 @@ class MainWindow(QMainWindow):
                         cv_img,
                         threshold=params.get("threshold", 120),
                         mode=params.get("mode", "otsu"),
+                        red_preserve_strength=params.get("red_preserve_strength", 0.85),
                     )
                     cv_img = CVProcessor.add_paper_noise(
                         cv_img,

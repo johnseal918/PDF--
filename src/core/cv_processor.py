@@ -13,7 +13,40 @@ class CVProcessor:
     """视觉处理核心类"""
 
     @staticmethod
-    def decolorize(image: np.ndarray, threshold: int = 120, mode: str = 'otsu') -> np.ndarray:
+    def _red_ink_mask(image: np.ndarray, strength: float) -> np.ndarray:
+        strength = max(0.0, min(1.0, float(strength)))
+        if strength <= 0.0:
+            return np.zeros(image.shape[:2], dtype=bool)
+
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        hue = hsv[:, :, 0]
+        saturation = hsv[:, :, 1]
+        value = hsv[:, :, 2]
+
+        bgr = image.astype(np.int16)
+        blue = bgr[:, :, 0]
+        green = bgr[:, :, 1]
+        red = bgr[:, :, 2]
+        red_dominance = red - np.maximum(green, blue)
+
+        red_hue = (hue <= 12) | (hue >= 168)
+        saturation_min = int(round(90 - (70 * strength)))
+        dominance_min = int(round(55 - (45 * strength)))
+
+        return (
+            red_hue
+            & (saturation >= saturation_min)
+            & (red_dominance >= dominance_min)
+            & (value >= 50)
+        )
+
+    @staticmethod
+    def decolorize(
+        image: np.ndarray,
+        threshold: int = 120,
+        mode: str = 'otsu',
+        red_preserve_strength: float = 0.85,
+    ) -> np.ndarray:
         """
         将彩色或带灰底的杂图转换为白底黑字的二值图像扫描件。
         
@@ -26,6 +59,7 @@ class CVProcessor:
             虽然是二值图黑白视觉，为了后续处理统一，强行三通道传回 BGR。
         """
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        red_mask = CVProcessor._red_ink_mask(image, red_preserve_strength)
         
         if mode == 'otsu':
             # Otsu's binarization (自动计算最适阈值，对对比强烈的文档奇效)
@@ -41,6 +75,9 @@ class CVProcessor:
             _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
             
         # 转回三通道用于叠色及与透明盖章合成
+        if red_mask.any():
+            binary[red_mask] = 0
+
         return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
 
     @staticmethod

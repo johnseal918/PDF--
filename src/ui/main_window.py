@@ -318,6 +318,7 @@ class MainWindow(QMainWindow):
         }
 
         canvas_widget.page_changed.connect(lambda idx, c=ctx: self._on_page_changed(c, idx))
+        canvas_widget.orientation_requested.connect(lambda landscape, c=ctx: self._on_orientation_requested(c, landscape))
         canvas_widget.canvas_view.binding_moved.connect(lambda y, c=ctx: self._on_binding_moved(c, y))
         canvas_widget.canvas_view.stamp_size_unified.connect(lambda w, c=ctx: self._on_stamp_size_unified(c, w))
 
@@ -381,8 +382,16 @@ class MainWindow(QMainWindow):
     def _show_ctx_page(self, ctx: dict, page_index: int):
         page_img = ctx["doc_model"].get_page(page_index)
         if page_img:
+            ctx["canvas_widget"].set_page_landscape(page_img.width > page_img.height)
             ctx["canvas_widget"].canvas_view.set_page_image(page_img, page_index)
             self._update_binding_preview_for_ctx(ctx)
+            if ctx is self._current_ctx():
+                self._property_panel.update_file_info(
+                    Path(ctx["file_path"]).name,
+                    ctx["doc_model"].page_count,
+                    page_img.width,
+                    page_img.height,
+                )
 
     def _render_ctx_page(self, ctx: dict, page_index: int):
         params = ctx["decolor_params"]
@@ -479,6 +488,21 @@ class MainWindow(QMainWindow):
         self._show_ctx_page(ctx, page_index)
         if ctx is self._current_ctx():
             self._status_bar.showMessage(f"第 {page_index + 1} / {ctx['doc_model'].page_count} 页")
+
+    def _on_orientation_requested(self, ctx: dict, landscape: bool):
+        page_index = ctx["canvas_widget"].get_current_page()
+        old_page = ctx["doc_model"].get_page(page_index)
+        if not old_page or not ctx["doc_model"].set_page_landscape(page_index, landscape):
+            return
+
+        new_page = ctx["doc_model"].get_page(page_index)
+        ctx["canvas_widget"].canvas_view.remap_page_stamps(
+            page_index,
+            new_page.width / old_page.width,
+            new_page.height / old_page.height,
+        )
+        ctx["rendered_pages"].discard(page_index)
+        self._render_ctx_page(ctx, page_index)
 
     def _on_stamp_size_unified(self, ctx: dict, target_width_a4: float):
         if not ctx:

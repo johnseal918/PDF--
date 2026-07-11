@@ -19,7 +19,12 @@ class RenderEngine:
         """Scale factor when fitting a page into an A4 canvas."""
         if page_width <= 0 or page_height <= 0:
             return 0.0
-        return min(RenderEngine.A4_WIDTH_PX / float(page_width), RenderEngine.A4_HEIGHT_PX / float(page_height))
+        target_width, target_height = (
+            (RenderEngine.A4_HEIGHT_PX, RenderEngine.A4_WIDTH_PX)
+            if page_width > page_height
+            else (RenderEngine.A4_WIDTH_PX, RenderEngine.A4_HEIGHT_PX)
+        )
+        return min(target_width / float(page_width), target_height / float(page_height))
 
     @staticmethod
     def binding_target_width_on_a4(user_scale: float = 1.0) -> int:

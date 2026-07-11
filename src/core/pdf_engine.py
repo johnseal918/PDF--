@@ -24,6 +24,7 @@ class DocumentModel:
     def __init__(self):
         self._pages: list[Image.Image] = []
         self._original_pages: list[Image.Image] = []
+        self._source_pages: list[Image.Image] = []
         self._source_path: Optional[str] = None
         self._is_pdf: bool = False
         self._dpi: int = 300
@@ -49,6 +50,7 @@ class DocumentModel:
         self._source_path = file_path
         self._pages.clear()
         self._original_pages.clear()
+        self._source_pages.clear()
 
         if suffix in SUPPORTED_PDF:
             self._is_pdf = True
@@ -57,24 +59,31 @@ class DocumentModel:
         return self._load_image(file_path)
 
     @staticmethod
-    def _normalize_to_a4_canvas(img: Image.Image) -> Image.Image:
+    def _normalize_to_a4_canvas(img: Image.Image, landscape: Optional[bool] = None) -> Image.Image:
         """
         Force every page onto an A4 canvas first, then continue processing.
         Keep aspect ratio and center the content on a white background.
         """
         src = img.convert("RGB")
         src_w, src_h = src.size
+        if landscape is None:
+            landscape = src_w > src_h
+        canvas_w, canvas_h = (
+            (DocumentModel.A4_HEIGHT_PX, DocumentModel.A4_WIDTH_PX)
+            if landscape
+            else (DocumentModel.A4_WIDTH_PX, DocumentModel.A4_HEIGHT_PX)
+        )
         if src_w <= 0 or src_h <= 0:
-            return Image.new("RGB", (DocumentModel.A4_WIDTH_PX, DocumentModel.A4_HEIGHT_PX), (255, 255, 255))
+            return Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
 
-        scale = min(DocumentModel.A4_WIDTH_PX / float(src_w), DocumentModel.A4_HEIGHT_PX / float(src_h))
+        scale = min(canvas_w / float(src_w), canvas_h / float(src_h))
         draw_w = max(1, int(round(src_w * scale)))
         draw_h = max(1, int(round(src_h * scale)))
         resized = src.resize((draw_w, draw_h), Image.Resampling.LANCZOS)
 
-        canvas = Image.new("RGB", (DocumentModel.A4_WIDTH_PX, DocumentModel.A4_HEIGHT_PX), (255, 255, 255))
-        x0 = (DocumentModel.A4_WIDTH_PX - draw_w) // 2
-        y0 = (DocumentModel.A4_HEIGHT_PX - draw_h) // 2
+        canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
+        x0 = (canvas_w - draw_w) // 2
+        y0 = (canvas_h - draw_h) // 2
         canvas.paste(resized, (x0, y0))
         return canvas
 
@@ -89,6 +98,7 @@ class DocumentModel:
                 pix = page.get_pixmap(matrix=mat, alpha=False)
                 img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
                 a4_img = DocumentModel._normalize_to_a4_canvas(img)
+                self._source_pages.append(img.copy())
                 self._pages.append(a4_img)
                 self._original_pages.append(a4_img.copy())
 
@@ -102,6 +112,7 @@ class DocumentModel:
         try:
             img = Image.open(file_path).convert("RGB")
             a4_img = DocumentModel._normalize_to_a4_canvas(img)
+            self._source_pages.append(img.copy())
             self._pages.append(a4_img)
             self._original_pages.append(a4_img.copy())
             return True
@@ -123,6 +134,17 @@ class DocumentModel:
         if 0 <= index < len(self._pages):
             self._pages[index] = img
 
+    def set_page_landscape(self, index: int, landscape: bool) -> bool:
+        if not 0 <= index < len(self._pages):
+            return False
+        if (self._pages[index].width > self._pages[index].height) == landscape:
+            return False
+        source = self._source_pages[index] if index < len(self._source_pages) else self._original_pages[index]
+        normalized = self._normalize_to_a4_canvas(source, landscape=landscape)
+        self._original_pages[index] = normalized
+        self._pages[index] = normalized.copy()
+        return True
+
     def reset_page(self, index: int):
         if 0 <= index < len(self._original_pages):
             self._pages[index] = self._original_pages[index].copy()
@@ -131,13 +153,18 @@ class DocumentModel:
         if 0 <= index < len(self._pages):
             self._pages.pop(index)
             self._original_pages.pop(index)
+            if index < len(self._source_pages):
+                self._source_pages.pop(index)
 
     def move_page(self, from_index: int, to_index: int):
         if 0 <= from_index < len(self._pages) and 0 <= to_index < len(self._pages):
             page = self._pages.pop(from_index)
             orig = self._original_pages.pop(from_index)
+            source = self._source_pages.pop(from_index) if from_index < len(self._source_pages) else None
             self._pages.insert(to_index, page)
             self._original_pages.insert(to_index, orig)
+            if source is not None:
+                self._source_pages.insert(to_index, source)
 
     def export_pdf(self, output_path: str, dpi: int = 300):
         if not self._pages:
@@ -155,6 +182,8 @@ class DocumentModel:
 
             a4_width_pt = 595.276
             a4_height_pt = 841.890
+            if page_img.width > page_img.height:
+                a4_width_pt, a4_height_pt = a4_height_pt, a4_width_pt
             page = doc.new_page(width=a4_width_pt, height=a4_height_pt)
 
             img_w, img_h = page_img.size

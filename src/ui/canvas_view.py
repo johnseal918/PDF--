@@ -77,6 +77,10 @@ class CanvasView(QGraphicsView):
             for item in items:
                 item.setVisible(page == self._current_page)
 
+    def remap_page_stamps(self, page_idx: int, scale_x: float, scale_y: float):
+        for item in self._page_stamps.get(page_idx, []):
+            item.setPos(item.x() * scale_x, item.y() * scale_y)
+
     def _page_size_for_index(self, page_idx: int) -> tuple[float, float]:
         size = self._page_sizes.get(page_idx)
         if size:
@@ -521,6 +525,7 @@ class CanvasView(QGraphicsView):
 
 class CanvasWidget(QWidget):
     page_changed = Signal(int)
+    orientation_requested = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -584,6 +589,15 @@ class CanvasWidget(QWidget):
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         nav_bar.addWidget(separator)
 
+        self._page_landscape = False
+        self._btn_orientation = QPushButton("▯ 纵向")
+        self._btn_orientation.setFixedWidth(72)
+        self._btn_orientation.setToolTip("切换当前页横向 / 纵向")
+        self._btn_orientation.clicked.connect(
+            lambda: self.orientation_requested.emit(not self._page_landscape)
+        )
+        nav_bar.addWidget(self._btn_orientation)
+
         nav_bar.addWidget(self._btn_prev)
         nav_bar.addWidget(self._page_spin)
         nav_bar.addWidget(self._label_total)
@@ -601,6 +615,10 @@ class CanvasWidget(QWidget):
 
         self._update_nav_state()
         self.canvas_view.zoom_changed.connect(self._on_zoom_changed)
+
+    def set_page_landscape(self, landscape: bool):
+        self._page_landscape = bool(landscape)
+        self._btn_orientation.setText("▭ 横向" if landscape else "▯ 纵向")
 
     def _apply_zoom(self, factor):
         self.canvas_view._zoom_factor *= factor

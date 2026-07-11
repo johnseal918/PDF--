@@ -8,7 +8,12 @@ from src.utils.user_settings import (
 
 def test_normalize_random_copy_settings_uses_defaults_for_missing_and_bad_values():
     settings = normalize_random_copy_settings(
-        {"copy_random_angle_range": "bad", "copy_random_position_mm": 99, "mouse_wheel_mode": "bad"}
+        {
+            "copy_random_angle_range": "bad",
+            "copy_random_position_mm": 99,
+            "mouse_wheel_mode": "bad",
+            "app_theme": "bad",
+        }
     )
 
     assert settings["copy_random_angle_enabled"] is False
@@ -17,6 +22,7 @@ def test_normalize_random_copy_settings_uses_defaults_for_missing_and_bad_values
     assert settings["copy_random_position_mm"] == 30.0
     assert settings["mouse_wheel_mode"] == "scroll"
     assert settings["mouse_wheel_inverted"] is False
+    assert settings["app_theme"] == "light"
 
 
 def test_clamp_random_copy_settings_keeps_values_in_allowed_ranges():
@@ -28,6 +34,7 @@ def test_clamp_random_copy_settings_keeps_values_in_allowed_ranges():
             "copy_random_position_mm": 40,
             "mouse_wheel_mode": "zoom",
             "mouse_wheel_inverted": True,
+            "app_theme": "dark",
         }
     )
 
@@ -37,6 +44,7 @@ def test_clamp_random_copy_settings_keeps_values_in_allowed_ranges():
     assert settings["copy_random_position_mm"] == 30.0
     assert settings["mouse_wheel_mode"] == "zoom"
     assert settings["mouse_wheel_inverted"] is True
+    assert settings["app_theme"] == "dark"
 
 
 def test_save_and_load_user_settings_round_trip():

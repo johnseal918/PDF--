@@ -17,6 +17,7 @@ DEFAULT_RANDOM_COPY_SETTINGS = {
     "copy_random_position_mm": 5.0,
     "mouse_wheel_mode": "scroll",
     "mouse_wheel_inverted": False,
+    "app_theme": "light",
 }
 
 
@@ -35,6 +36,9 @@ def clamp_random_copy_settings(settings: dict[str, Any]) -> dict[str, Any]:
     wheel_mode = settings.get("mouse_wheel_mode", "scroll")
     if wheel_mode not in ("scroll", "zoom"):
         wheel_mode = "scroll"
+    app_theme = settings.get("app_theme", "light")
+    if app_theme not in ("light", "dark"):
+        app_theme = "light"
     return {
         "copy_random_angle_enabled": bool(settings.get("copy_random_angle_enabled", False)),
         "copy_random_position_enabled": bool(settings.get("copy_random_position_enabled", False)),
@@ -46,6 +50,7 @@ def clamp_random_copy_settings(settings: dict[str, Any]) -> dict[str, Any]:
         ),
         "mouse_wheel_mode": wheel_mode,
         "mouse_wheel_inverted": bool(settings.get("mouse_wheel_inverted", False)),
+        "app_theme": app_theme,
     }
 
 

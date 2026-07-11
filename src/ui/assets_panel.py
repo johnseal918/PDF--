@@ -99,27 +99,31 @@ class DocumentTabsList(QListWidget):
     def add_document(self, name: str, tooltip: str):
         item = QListWidgetItem()
         item.setToolTip(tooltip)
-        item.setSizeHint(QSize(0, 44))
+        item.setSizeHint(QSize(0, 34))
         self.addItem(item)
 
         row_widget = QWidget()
         row_layout = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(6, 0, 2, 0)
-        row_layout.setSpacing(4)
+        row_layout.setSpacing(2)
 
         label = QLabel(name)
         label.setToolTip(tooltip)
-        label.setStyleSheet("font-size: 13px; padding: 6px 0;")
+        label.setStyleSheet("font-size: 13px; padding: 2px 0;")
         label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        close_btn = QPushButton("×")
-        close_btn.setFixedSize(24, 24)
+        close_btn = QPushButton("x")
+        close_btn.setFixedSize(22, 22)
+        close_btn.hide()
         close_btn.setToolTip("关闭此文件")
+        close_btn.setStyleSheet("padding: 0px; font-weight: bold;")
 
         def select_row(_event=None, row_item=item):
             self.setCurrentRow(self.row(row_item))
 
         row_widget.mousePressEvent = select_row
         label.mousePressEvent = select_row
+        row_widget.enterEvent = lambda _event, btn=close_btn: btn.show()
+        row_widget.leaveEvent = lambda _event, btn=close_btn: btn.hide()
         close_btn.clicked.connect(lambda _=False, row_item=item: self.close_requested.emit(self.row(row_item)))
 
         row_layout.addWidget(label, 1)
@@ -179,11 +183,6 @@ class AssetsPanel(QWidget):
         asset_layout.setContentsMargins(0, 0, 0, 0)
         asset_layout.setSpacing(0)
 
-        title = QLabel("📦 素材库")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 14px; font-weight: bold; padding: 6px;")
-        asset_layout.addWidget(title)
-
         # 标签页构建
         self._tabs = QTabWidget()
         
@@ -201,7 +200,7 @@ class AssetsPanel(QWidget):
         asset_layout.addWidget(hint)
 
         self._library_splitter.addWidget(asset_section)
-        self._library_splitter.setSizes([220, 520])
+        self._library_splitter.setSizes([700, 360])
         layout.addWidget(self._library_splitter)
         
         # 激活信号

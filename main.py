@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont
+from src.utils.user_settings import load_user_settings
 
 
 # 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ 缁熶竴鐨勬繁鐏板伐涓氶 QSS 涓婚 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -343,8 +344,9 @@ def main():
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
 
-    # Apply the shared application stylesheet.
-    app.setStyleSheet(DARK_INDUSTRIAL_QSS)
+    # Keep the dark stylesheet available; default theme is the native light UI.
+    app.setProperty("dark_qss", DARK_INDUSTRIAL_QSS)
+    app.setStyleSheet(DARK_INDUSTRIAL_QSS if load_user_settings().get("app_theme") == "dark" else "")
 
     # 鍒涘缓骞舵樉绀轰富绐楀彛
     window = MainWindow()

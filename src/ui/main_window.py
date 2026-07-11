@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
         self._bound_undo_stack = None
         self._tpl_manager = TemplateManager()
         self._random_copy_settings = load_user_settings()
+        self._apply_app_theme(self._random_copy_settings.get("app_theme", "light"))
         self._pending_decolor_preview_ctx = None
         self._decolor_preview_timer = QTimer(self)
         self._decolor_preview_timer.setSingleShot(True)
@@ -119,6 +120,12 @@ class MainWindow(QMainWindow):
         about_action = QAction("关于(&A)", self)
         about_action.triggered.connect(self._on_about)
         help_menu.addAction(about_action)
+
+    def _apply_app_theme(self, theme: str):
+        app = QApplication.instance()
+        if not app:
+            return
+        app.setStyleSheet((app.property("dark_qss") or "") if theme == "dark" else "")
 
     def _setup_central_area(self):
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -893,6 +900,12 @@ class MainWindow(QMainWindow):
         layout.addRow("鼠标滚轮:", wheel_mode)
         layout.addRow("", wheel_inverted)
 
+        app_theme = QComboBox(dialog)
+        app_theme.addItem("白色", "light")
+        app_theme.addItem("黑色", "dark")
+        app_theme.setCurrentIndex(max(0, app_theme.findData(self._random_copy_settings.get("app_theme", "light"))))
+        layout.addRow("界面主题:", app_theme)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -905,7 +918,9 @@ class MainWindow(QMainWindow):
         self._random_copy_settings["copy_random_position_mm"] = position_spin.value()
         self._random_copy_settings["mouse_wheel_mode"] = wheel_mode.currentData()
         self._random_copy_settings["mouse_wheel_inverted"] = wheel_inverted.isChecked()
+        self._random_copy_settings["app_theme"] = app_theme.currentData()
         save_user_settings(self._random_copy_settings)
+        self._apply_app_theme(self._random_copy_settings["app_theme"])
         for ctx in self._contexts.values():
             ctx["canvas_widget"].canvas_view.set_random_copy_settings(self._random_copy_settings)
             ctx["canvas_widget"].canvas_view.set_wheel_settings(self._random_copy_settings)

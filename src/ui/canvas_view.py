@@ -66,10 +66,17 @@ class CanvasView(QGraphicsView):
             "copy_random_angle_range": 3.0,
             "copy_random_position_mm": 5.0,
         }
+        self._mouse_wheel_mode = "scroll"
+        self._mouse_wheel_inverted = False
 
     def set_random_copy_settings(self, settings: dict):
         self._random_copy_settings.update(settings or {})
         self._apply_random_copy_settings_to_items()
+
+    def set_wheel_settings(self, settings: dict):
+        mode = (settings or {}).get("mouse_wheel_mode", "scroll")
+        self._mouse_wheel_mode = mode if mode in ("scroll", "zoom") else "scroll"
+        self._mouse_wheel_inverted = bool((settings or {}).get("mouse_wheel_inverted", False))
 
     def _apply_random_copy_settings_to_items(self):
         for items in self._page_stamps.values():
@@ -487,8 +494,11 @@ class CanvasView(QGraphicsView):
         self.undo_stack.clear()
 
     def wheelEvent(self, event: QWheelEvent):
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            delta = event.angleDelta().y()
+        delta = event.angleDelta().y()
+        if self._mouse_wheel_inverted:
+            delta = -delta
+
+        if self._mouse_wheel_mode == "zoom" or event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             factor = 1.15 if delta > 0 else 1.0 / 1.15
             self._zoom_factor *= factor
             if 0.1 <= self._zoom_factor <= 10.0:
@@ -496,6 +506,10 @@ class CanvasView(QGraphicsView):
                 self.zoom_changed.emit(self._zoom_factor)
             else:
                 self._zoom_factor /= factor
+            event.accept()
+        elif self._mouse_wheel_inverted:
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() + delta)
+            event.accept()
         else:
             super().wheelEvent(event)
 

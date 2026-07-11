@@ -10,7 +10,7 @@ M2阶段完全体：
 from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget, QListWidget, QListWidgetItem,
-    QMenu, QMessageBox, QPushButton
+    QMenu, QMessageBox, QPushButton, QSplitter
 )
 from PySide6.QtCore import Qt, Signal, QMimeData, QPoint, QSize
 from PySide6.QtGui import QIcon, QPixmap, QDragEnterEvent, QDropEvent, QDrag
@@ -91,15 +91,15 @@ class DocumentTabsList(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setVisible(False)
-        self.setMaximumHeight(150)
         self.setSpacing(2)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setMinimumHeight(120)
 
     def add_document(self, name: str, tooltip: str):
         item = QListWidgetItem()
         item.setToolTip(tooltip)
-        item.setSizeHint(QSize(0, 28))
+        item.setSizeHint(QSize(0, 44))
         self.addItem(item)
 
         row_widget = QWidget()
@@ -109,9 +109,10 @@ class DocumentTabsList(QListWidget):
 
         label = QLabel(name)
         label.setToolTip(tooltip)
+        label.setStyleSheet("font-size: 13px; padding: 6px 0;")
         label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         close_btn = QPushButton("×")
-        close_btn.setFixedSize(20, 20)
+        close_btn.setFixedSize(24, 24)
         close_btn.setToolTip("关闭此文件")
 
         def select_row(_event=None, row_item=item):
@@ -169,12 +170,19 @@ class AssetsPanel(QWidget):
         self._document_tabs = DocumentTabsList()
         self._document_tabs.currentRowChanged.connect(self._on_document_selected)
         self._document_tabs.close_requested.connect(self.document_close_requested.emit)
-        layout.addWidget(self._document_tabs)
+
+        self._library_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._library_splitter.addWidget(self._document_tabs)
+
+        asset_section = QWidget()
+        asset_layout = QVBoxLayout(asset_section)
+        asset_layout.setContentsMargins(0, 0, 0, 0)
+        asset_layout.setSpacing(0)
 
         title = QLabel("📦 素材库")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 14px; font-weight: bold; padding: 6px;")
-        layout.addWidget(title)
+        asset_layout.addWidget(title)
 
         # 标签页构建
         self._tabs = QTabWidget()
@@ -185,12 +193,16 @@ class AssetsPanel(QWidget):
         self._signature_list = DroppableListWidget("signatures")
         self._tabs.addTab(self._signature_list, "✍ 签名")
 
-        layout.addWidget(self._tabs)
+        asset_layout.addWidget(self._tabs)
 
         hint = QLabel("双击盖章 | 拖拽定位 | 右键管理")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("color: #888; font-size: 11px; padding: 4px;")
-        layout.addWidget(hint)
+        asset_layout.addWidget(hint)
+
+        self._library_splitter.addWidget(asset_section)
+        self._library_splitter.setSizes([220, 520])
+        layout.addWidget(self._library_splitter)
         
         # 激活信号
         self._stamp_list.file_dropped.connect(self._on_file_dropped)

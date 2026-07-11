@@ -57,6 +57,7 @@ DerivedData/
 # Local user assets and templates
 /assets/stamps/
 /config/assets.json
+/config/user_settings.json
 /config/templates/
 
 # Scratch probes

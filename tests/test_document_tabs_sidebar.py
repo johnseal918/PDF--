@@ -15,9 +15,12 @@ def _app():
 def test_document_tabs_live_below_shortcuts_and_above_assets_title():
     _app()
     panel = AssetsPanel()
+    panel.add_document_tab("a.pdf", "C:/a.pdf")
 
-    assert panel.layout().itemAt(1).widget() is panel._document_tabs
-    assert panel.layout().itemAt(2).widget().text() == "📦 素材库"
+    assert panel.layout().itemAt(1).widget() is panel._library_splitter
+    assert panel._library_splitter.widget(0) is panel._document_tabs
+    assert panel._library_splitter.widget(1).layout().itemAt(0).widget().text() == "📦 素材库"
+    assert panel._document_tabs.sizeHintForRow(0) >= 40
 
 
 def test_document_tabs_emit_selection_and_close_requests():

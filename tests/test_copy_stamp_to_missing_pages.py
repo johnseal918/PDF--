@@ -82,3 +82,16 @@ def test_copy_stamp_spec_uses_source_page_size_for_other_documents():
 
     copied = target_view._page_stamps[0][0]
     assert copied.pos() == QPointF(500, 500)
+
+
+def test_canvas_view_wheel_settings_are_applied_and_clamped():
+    _app()
+    view = CanvasView()
+
+    view.set_wheel_settings({"mouse_wheel_mode": "zoom", "mouse_wheel_inverted": True})
+    assert view._mouse_wheel_mode == "zoom"
+    assert view._mouse_wheel_inverted is True
+
+    view.set_wheel_settings({"mouse_wheel_mode": "bad", "mouse_wheel_inverted": False})
+    assert view._mouse_wheel_mode == "scroll"
+    assert view._mouse_wheel_inverted is False

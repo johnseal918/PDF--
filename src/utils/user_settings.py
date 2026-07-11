@@ -15,6 +15,8 @@ DEFAULT_RANDOM_COPY_SETTINGS = {
     "copy_random_position_enabled": False,
     "copy_random_angle_range": 3.0,
     "copy_random_position_mm": 5.0,
+    "mouse_wheel_mode": "scroll",
+    "mouse_wheel_inverted": False,
 }
 
 
@@ -30,6 +32,9 @@ def _clamp(value: float, low: float, high: float) -> float:
 
 
 def clamp_random_copy_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    wheel_mode = settings.get("mouse_wheel_mode", "scroll")
+    if wheel_mode not in ("scroll", "zoom"):
+        wheel_mode = "scroll"
     return {
         "copy_random_angle_enabled": bool(settings.get("copy_random_angle_enabled", False)),
         "copy_random_position_enabled": bool(settings.get("copy_random_position_enabled", False)),
@@ -39,6 +44,8 @@ def clamp_random_copy_settings(settings: dict[str, Any]) -> dict[str, Any]:
         "copy_random_position_mm": _clamp(
             _float_or_default(settings.get("copy_random_position_mm"), 5.0), 0.0, 30.0
         ),
+        "mouse_wheel_mode": wheel_mode,
+        "mouse_wheel_inverted": bool(settings.get("mouse_wheel_inverted", False)),
     }
 
 

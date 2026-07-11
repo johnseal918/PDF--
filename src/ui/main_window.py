@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QMainWindow,
     QMessageBox,
+    QCheckBox,
+    QComboBox,
     QProgressDialog,
     QSplitter,
     QStatusBar,
@@ -109,7 +111,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.redo_action)
 
         edit_menu.addSeparator()
-        random_copy_action = QAction("随机复制设置...", self)
+        random_copy_action = QAction("操作设置...", self)
         random_copy_action.triggered.connect(self._on_random_copy_settings)
         edit_menu.addAction(random_copy_action)
 
@@ -342,6 +344,7 @@ class MainWindow(QMainWindow):
         )
         canvas_widget.canvas_view.random_copy_settings_changed.connect(self._on_random_copy_settings_changed)
         canvas_widget.canvas_view.set_random_copy_settings(self._random_copy_settings)
+        canvas_widget.canvas_view.set_wheel_settings(self._random_copy_settings)
 
         self._render_ctx_page(ctx, 0)
 
@@ -578,6 +581,7 @@ class MainWindow(QMainWindow):
         save_user_settings(self._random_copy_settings)
         for ctx in self._contexts.values():
             ctx["canvas_widget"].canvas_view.set_random_copy_settings(self._random_copy_settings)
+            ctx["canvas_widget"].canvas_view.set_wheel_settings(self._random_copy_settings)
 
     def _on_binding_params_changed(self, params: dict):
         ctx = self._current_ctx()
@@ -859,7 +863,7 @@ class MainWindow(QMainWindow):
 
     def _on_random_copy_settings(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("随机复制设置")
+        dialog.setWindowTitle("操作设置")
         layout = QFormLayout(dialog)
 
         angle_spin = QDoubleSpinBox(dialog)
@@ -877,6 +881,18 @@ class MainWindow(QMainWindow):
         layout.addRow("随机角度范围:", angle_spin)
         layout.addRow("随机位置范围:", position_spin)
 
+        wheel_mode = QComboBox(dialog)
+        wheel_mode.addItem("滚动页面", "scroll")
+        wheel_mode.addItem("缩放页面", "zoom")
+        current_mode = self._random_copy_settings.get("mouse_wheel_mode", "scroll")
+        wheel_mode.setCurrentIndex(max(0, wheel_mode.findData(current_mode)))
+
+        wheel_inverted = QCheckBox("反转滚轮方向", dialog)
+        wheel_inverted.setChecked(bool(self._random_copy_settings.get("mouse_wheel_inverted", False)))
+
+        layout.addRow("鼠标滚轮:", wheel_mode)
+        layout.addRow("", wheel_inverted)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -887,10 +903,13 @@ class MainWindow(QMainWindow):
 
         self._random_copy_settings["copy_random_angle_range"] = angle_spin.value()
         self._random_copy_settings["copy_random_position_mm"] = position_spin.value()
+        self._random_copy_settings["mouse_wheel_mode"] = wheel_mode.currentData()
+        self._random_copy_settings["mouse_wheel_inverted"] = wheel_inverted.isChecked()
         save_user_settings(self._random_copy_settings)
         for ctx in self._contexts.values():
             ctx["canvas_widget"].canvas_view.set_random_copy_settings(self._random_copy_settings)
-        self._status_bar.showMessage("随机复制设置已保存", 3000)
+            ctx["canvas_widget"].canvas_view.set_wheel_settings(self._random_copy_settings)
+        self._status_bar.showMessage("操作设置已保存", 3000)
 
     def _on_about(self):
         QMessageBox.about(

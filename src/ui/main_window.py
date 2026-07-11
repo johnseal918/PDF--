@@ -125,9 +125,10 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._assets_panel)
 
         self._doc_tabs = QTabWidget()
-        self._doc_tabs.setTabsClosable(True)
-        self._doc_tabs.setMovable(True)
+        self._doc_tabs.setTabsClosable(False)
+        self._doc_tabs.setMovable(False)
         self._doc_tabs.setDocumentMode(True)
+        self._doc_tabs.tabBar().hide()
         self._doc_tabs.currentChanged.connect(self._on_tab_changed)
         self._doc_tabs.tabCloseRequested.connect(self._on_tab_close_requested)
         splitter.addWidget(self._doc_tabs)
@@ -148,6 +149,8 @@ class MainWindow(QMainWindow):
         self._assets_panel._signature_list.stamp_double_clicked.connect(self._on_stamp_double_clicked)
         self._assets_panel.open_requested.connect(self._on_open_file)
         self._assets_panel.export_pdf_requested.connect(self._on_export_pdf)
+        self._assets_panel.document_selected.connect(self._doc_tabs.setCurrentIndex)
+        self._assets_panel.document_close_requested.connect(self._on_tab_close_requested)
 
         splitter.setSizes([220, 860, 280])
         splitter.setStretchFactor(0, 0)
@@ -344,6 +347,7 @@ class MainWindow(QMainWindow):
 
         tab_index = self._doc_tabs.addTab(canvas_widget, path.name)
         self._doc_tabs.setTabToolTip(tab_index, file_path)
+        self._assets_panel.add_document_tab(path.name, file_path)
         self._contexts[canvas_widget] = ctx
         self._doc_tabs.setCurrentIndex(tab_index)
         self._on_tab_changed(tab_index)
@@ -351,6 +355,7 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, _index: int):
         ctx = self._current_ctx()
+        self._assets_panel.set_current_document(_index)
         if not ctx:
             self._bind_undo_stack(None)
             self.setWindowTitle(self.APP_TITLE)
@@ -385,6 +390,7 @@ class MainWindow(QMainWindow):
         if widget is None:
             return
         ctx = self._contexts.pop(widget, None)
+        self._assets_panel.remove_document_tab(index)
         self._doc_tabs.removeTab(index)
         widget.deleteLater()
         if ctx:

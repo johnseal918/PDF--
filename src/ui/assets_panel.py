@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget, QListWidget, QListWidgetItem,
     QMenu, QMessageBox, QPushButton
 )
-from PySide6.QtCore import Qt, Signal, QMimeData, QPoint
+from PySide6.QtCore import Qt, Signal, QMimeData, QPoint, QSize
 from PySide6.QtGui import QIcon, QPixmap, QDragEnterEvent, QDropEvent, QDrag
 
 from src.core.assets_manager import AssetsManager
@@ -85,11 +85,64 @@ class DroppableListWidget(QListWidget):
                 event.acceptProposedAction()
 
 
+class DocumentTabsList(QListWidget):
+    close_requested = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVisible(False)
+        self.setMaximumHeight(150)
+        self.setSpacing(2)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+    def add_document(self, name: str, tooltip: str):
+        item = QListWidgetItem()
+        item.setToolTip(tooltip)
+        item.setSizeHint(QSize(0, 28))
+        self.addItem(item)
+
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(6, 0, 2, 0)
+        row_layout.setSpacing(4)
+
+        label = QLabel(name)
+        label.setToolTip(tooltip)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        close_btn = QPushButton("×")
+        close_btn.setFixedSize(20, 20)
+        close_btn.setToolTip("关闭此文件")
+
+        def select_row(_event=None, row_item=item):
+            self.setCurrentRow(self.row(row_item))
+
+        row_widget.mousePressEvent = select_row
+        label.mousePressEvent = select_row
+        close_btn.clicked.connect(lambda _=False, row_item=item: self.close_requested.emit(self.row(row_item)))
+
+        row_layout.addWidget(label, 1)
+        row_layout.addWidget(close_btn)
+        self.setItemWidget(item, row_widget)
+        self.setVisible(True)
+
+    def remove_document(self, index: int):
+        if 0 <= index < self.count():
+            self.takeItem(index)
+        self.setVisible(self.count() > 0)
+
+    def request_close(self, index: int):
+        if 0 <= index < self.count():
+            self.close_requested.emit(index)
+
+
 class AssetsPanel(QWidget):
     """左侧素材管理面板核心体。"""
 
     open_requested = Signal()
     export_pdf_requested = Signal()
+    document_selected = Signal(int)
+    document_close_requested = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -112,6 +165,11 @@ class AssetsPanel(QWidget):
         shortcuts.addWidget(self.btn_open_file)
         shortcuts.addWidget(self.btn_export_pdf)
         layout.addLayout(shortcuts)
+
+        self._document_tabs = DocumentTabsList()
+        self._document_tabs.currentRowChanged.connect(self._on_document_selected)
+        self._document_tabs.close_requested.connect(self.document_close_requested.emit)
+        layout.addWidget(self._document_tabs)
 
         title = QLabel("📦 素材库")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -151,6 +209,23 @@ class AssetsPanel(QWidget):
     def set_export_enabled(self, enabled: bool):
         self.btn_export_pdf.setEnabled(enabled)
         self.btn_export_pdf.setToolTip("" if enabled else "请先打开文件")
+
+    def add_document_tab(self, name: str, tooltip: str):
+        self._document_tabs.add_document(name, tooltip)
+
+    def remove_document_tab(self, index: int):
+        self._document_tabs.remove_document(index)
+
+    def set_current_document(self, index: int):
+        if 0 <= index < self._document_tabs.count():
+            self._document_tabs.setCurrentRow(index)
+
+    def request_document_close(self, index: int):
+        self._document_tabs.request_close(index)
+
+    def _on_document_selected(self, index: int):
+        if index >= 0:
+            self.document_selected.emit(index)
 
     def _get_list_widget(self, category: str) -> DroppableListWidget:
         if category == "stamps":

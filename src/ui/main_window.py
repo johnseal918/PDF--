@@ -11,7 +11,11 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
+    QFormLayout,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
@@ -28,6 +32,7 @@ from src.ui.assets_panel import AssetsPanel
 from src.ui.canvas_view import CanvasWidget
 from src.ui.property_panel import PropertyPanel
 from src.utils.image_utils import numpy_to_pil, pil_to_numpy
+from src.utils.user_settings import load_user_settings, save_user_settings
 
 
 class MainWindow(QMainWindow):
@@ -43,6 +48,7 @@ class MainWindow(QMainWindow):
         self._contexts = {}
         self._bound_undo_stack = None
         self._tpl_manager = TemplateManager()
+        self._random_copy_settings = load_user_settings()
         self._pending_decolor_preview_ctx = None
         self._decolor_preview_timer = QTimer(self)
         self._decolor_preview_timer.setSingleShot(True)
@@ -101,6 +107,11 @@ class MainWindow(QMainWindow):
         self.redo_action.setEnabled(False)
         self.redo_action.triggered.connect(self._on_redo)
         edit_menu.addAction(self.redo_action)
+
+        edit_menu.addSeparator()
+        random_copy_action = QAction("随机复制设置...", self)
+        random_copy_action.triggered.connect(self._on_random_copy_settings)
+        edit_menu.addAction(random_copy_action)
 
         help_menu = menu_bar.addMenu("帮助(&H)")
         about_action = QAction("关于(&A)", self)
@@ -320,6 +331,14 @@ class MainWindow(QMainWindow):
         canvas_widget.canvas_view.binding_moved.connect(lambda y, c=ctx: self._on_binding_moved(c, y))
         canvas_widget.canvas_view.stamp_size_unified.connect(lambda w, c=ctx: self._on_stamp_size_unified(c, w))
         canvas_widget.canvas_view.same_stamp_size_unified.connect(self._on_same_stamp_size_unified)
+        canvas_widget.canvas_view.copy_stamp_to_document_requested.connect(
+            lambda item, options, c=ctx: self._on_copy_stamp_to_document(c, item, options)
+        )
+        canvas_widget.canvas_view.copy_stamp_to_open_documents_requested.connect(
+            lambda spec, options, c=ctx: self._on_copy_stamp_to_open_documents(c, spec, options)
+        )
+        canvas_widget.canvas_view.random_copy_settings_changed.connect(self._on_random_copy_settings_changed)
+        canvas_widget.canvas_view.set_random_copy_settings(self._random_copy_settings)
 
         self._render_ctx_page(ctx, 0)
 
@@ -510,6 +529,49 @@ class MainWindow(QMainWindow):
         for ctx in self._contexts.values():
             changed += ctx["canvas_widget"].canvas_view.unify_asset_size(asset_id, target_width_a4)
         self._status_bar.showMessage(f"已同步所有打开文档中的同款印章：{changed} 个", 3000)
+
+    def _sync_ctx_page_sizes(self, ctx: dict):
+        model = ctx["doc_model"]
+        canvas_view = ctx["canvas_widget"].canvas_view
+        for page_idx in range(model.page_count):
+            page = model.get_page(page_idx)
+            if page:
+                canvas_view._page_sizes[page_idx] = (page.width, page.height)
+
+    def _on_copy_stamp_to_document(self, ctx: dict, item, options: dict):
+        self._sync_ctx_page_sizes(ctx)
+        pages = range(ctx["doc_model"].page_count)
+        result = ctx["canvas_widget"].canvas_view.copy_stamp_to_missing_pages(item, pages, options)
+        if result["added"] == 0:
+            QMessageBox.information(self, "提示", "当前文档没有可复制的缺失页面。")
+        self._status_bar.showMessage(
+            f"已复制到当前文档：新增 {result['added']} 个，跳过 {result['skipped']} 页",
+            3000,
+        )
+
+    def _on_copy_stamp_to_open_documents(self, source_ctx: dict, spec: dict, options: dict):
+        total_added = 0
+        total_skipped = 0
+        for ctx in self._contexts.values():
+            if ctx is source_ctx:
+                continue
+            self._sync_ctx_page_sizes(ctx)
+            pages = range(ctx["doc_model"].page_count)
+            result = ctx["canvas_widget"].canvas_view.copy_stamp_spec_to_missing_pages(spec, pages, options)
+            total_added += result["added"]
+            total_skipped += result["skipped"]
+        if total_added == 0:
+            QMessageBox.information(self, "提示", "其余已打开文档没有可复制的缺失页面。")
+        self._status_bar.showMessage(
+            f"已复制到其余文档：新增 {total_added} 个，跳过 {total_skipped} 页",
+            3000,
+        )
+
+    def _on_random_copy_settings_changed(self, settings: dict):
+        self._random_copy_settings.update(settings)
+        save_user_settings(self._random_copy_settings)
+        for ctx in self._contexts.values():
+            ctx["canvas_widget"].canvas_view.set_random_copy_settings(self._random_copy_settings)
 
     def _on_binding_params_changed(self, params: dict):
         ctx = self._current_ctx()
@@ -788,6 +850,41 @@ class MainWindow(QMainWindow):
             return
         ctx["canvas_widget"].canvas_view.undo_stack.redo()
         self._update_undo_redo_enabled()
+
+    def _on_random_copy_settings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("随机复制设置")
+        layout = QFormLayout(dialog)
+
+        angle_spin = QDoubleSpinBox(dialog)
+        angle_spin.setRange(0.0, 15.0)
+        angle_spin.setDecimals(1)
+        angle_spin.setSuffix(" °")
+        angle_spin.setValue(float(self._random_copy_settings.get("copy_random_angle_range", 3.0)))
+
+        position_spin = QDoubleSpinBox(dialog)
+        position_spin.setRange(0.0, 30.0)
+        position_spin.setDecimals(1)
+        position_spin.setSuffix(" mm")
+        position_spin.setValue(float(self._random_copy_settings.get("copy_random_position_mm", 5.0)))
+
+        layout.addRow("随机角度范围:", angle_spin)
+        layout.addRow("随机位置范围:", position_spin)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        self._random_copy_settings["copy_random_angle_range"] = angle_spin.value()
+        self._random_copy_settings["copy_random_position_mm"] = position_spin.value()
+        save_user_settings(self._random_copy_settings)
+        for ctx in self._contexts.values():
+            ctx["canvas_widget"].canvas_view.set_random_copy_settings(self._random_copy_settings)
+        self._status_bar.showMessage("随机复制设置已保存", 3000)
 
     def _on_about(self):
         QMessageBox.about(

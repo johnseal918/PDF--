@@ -2,6 +2,9 @@
 Canvas view components.
 """
 
+import math
+import random
+
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPainter, QPixmap, QUndoStack, QWheelEvent
 from PySide6.QtWidgets import (
@@ -22,7 +25,7 @@ from PIL import Image
 from src.core.assets_manager import AssetsManager
 from src.core.render_engine import RenderEngine
 from src.ui.stamp_item import StampItem
-from src.ui.undo_commands import AddStampCommand, ModifyStampCommand, RemoveStampCommand
+from src.ui.undo_commands import AddStampCommand, AddStampsBatchCommand, ModifyStampCommand, RemoveStampCommand
 from src.utils.image_utils import pil_to_qpixmap
 
 
@@ -31,6 +34,9 @@ class CanvasView(QGraphicsView):
     binding_moved = Signal(int)
     stamp_size_unified = Signal(float)
     same_stamp_size_unified = Signal(str, float)
+    copy_stamp_to_document_requested = Signal(object, dict)
+    copy_stamp_to_open_documents_requested = Signal(dict, dict)
+    random_copy_settings_changed = Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,6 +60,34 @@ class CanvasView(QGraphicsView):
 
         self.undo_stack = QUndoStack(self)
         self._assets_manager = AssetsManager()
+        self._random_copy_settings = {
+            "copy_random_angle_enabled": False,
+            "copy_random_position_enabled": False,
+            "copy_random_angle_range": 3.0,
+            "copy_random_position_mm": 5.0,
+        }
+
+    def set_random_copy_settings(self, settings: dict):
+        self._random_copy_settings.update(settings or {})
+        self._apply_random_copy_settings_to_items()
+
+    def _apply_random_copy_settings_to_items(self):
+        for items in self._page_stamps.values():
+            for item in items:
+                item.copy_random_angle_enabled = bool(
+                    self._random_copy_settings.get("copy_random_angle_enabled", False)
+                )
+                item.copy_random_position_enabled = bool(
+                    self._random_copy_settings.get("copy_random_position_enabled", False)
+                )
+
+    def _copy_options_from_item(self, item: StampItem) -> dict:
+        return {
+            "angle_enabled": bool(getattr(item, "copy_random_angle_enabled", False)),
+            "position_enabled": bool(getattr(item, "copy_random_position_enabled", False)),
+            "angle_range": float(self._random_copy_settings.get("copy_random_angle_range", 3.0)),
+            "position_mm": float(self._random_copy_settings.get("copy_random_position_mm", 5.0)),
+        }
 
     def set_page_image(self, pil_img: Image.Image, page_idx: int):
         self._current_page = page_idx
@@ -116,6 +150,114 @@ class CanvasView(QGraphicsView):
 
         self.stamp_size_unified.emit(float(target_width_a4))
         self._update_binding_placement()
+
+    def _has_same_stamp_on_page(self, page_idx: int, asset_id: str) -> bool:
+        return any(
+            item.asset_id == asset_id and getattr(item, "category", "stamps") == "stamps"
+            for item in self._page_stamps.get(page_idx, [])
+        )
+
+    def build_stamp_copy_spec(self, src_item: StampItem) -> dict:
+        source_page = getattr(src_item, "page_index", self._current_page)
+        source_w, source_h = self._page_size_for_index(source_page)
+        return {
+            "asset_id": src_item.asset_id,
+            "pixmap": QPixmap(src_item.pixmap),
+            "source_page": source_page,
+            "source_page_size": (source_w, source_h),
+            "source_pos": QPointF(src_item.pos()),
+            "width": src_item.w,
+            "height": src_item.h,
+            "scale": src_item.scale(),
+            "rotation": src_item.rotation(),
+            "z": src_item.zValue(),
+        }
+
+    def _clone_stamp_for_page(self, spec: dict, page_idx: int, options: dict) -> tuple[StampItem, QPointF]:
+        source_w, source_h = spec["source_page_size"]
+        target_w, target_h = self._page_size_for_index(page_idx)
+
+        source_pos = spec["source_pos"]
+        ratio_x = 0.5 if source_w <= 0 else float(source_pos.x()) / source_w
+        ratio_y = 0.5 if source_h <= 0 else float(source_pos.y()) / source_h
+        pos = QPointF(ratio_x * target_w, ratio_y * target_h)
+
+        target_scale = float(spec["scale"])
+        source_to_a4 = RenderEngine.get_page_to_a4_scale(source_w, source_h)
+        target_to_a4 = RenderEngine.get_page_to_a4_scale(target_w, target_h)
+        source_width = float(spec["width"])
+        if source_to_a4 > 0 and target_to_a4 > 0 and source_width > 0:
+            width_a4 = source_width * float(spec["scale"]) * source_to_a4
+            target_width = RenderEngine.binding_units_on_page(target_w, target_h, width_a4)
+            target_scale = max(0.05, min(target_width / source_width, 20.0))
+
+        item = StampItem(QPixmap(spec["pixmap"]), spec["asset_id"])
+        item.category = "stamps"
+        item.page_index = page_idx
+        item.copy_random_angle_enabled = bool(self._random_copy_settings.get("copy_random_angle_enabled", False))
+        item.copy_random_position_enabled = bool(self._random_copy_settings.get("copy_random_position_enabled", False))
+        item.setScale(target_scale)
+        rotation = float(spec["rotation"])
+        if options.get("angle_enabled"):
+            angle_range = max(0.0, float(options.get("angle_range", 3.0)))
+            rotation += random.uniform(-angle_range, angle_range)
+        item.setRotation(rotation)
+        item.setZValue(float(spec["z"]))
+
+        if options.get("position_enabled"):
+            mm_range = max(0.0, float(options.get("position_mm", 5.0)))
+            target_to_a4 = RenderEngine.get_page_to_a4_scale(target_w, target_h)
+            if target_to_a4 > 0:
+                a4_px_per_mm = RenderEngine.A4_WIDTH_PX / 210.0
+                page_units = (mm_range * a4_px_per_mm) / target_to_a4
+                pos += QPointF(random.uniform(-page_units, page_units), random.uniform(-page_units, page_units))
+
+        return item, self._clamp_stamp_position(item, pos, target_w, target_h)
+
+    def _clamp_stamp_position(self, item: StampItem, pos: QPointF, page_w: float, page_h: float) -> QPointF:
+        radians = math.radians(float(item.rotation()))
+        cos_v = abs(math.cos(radians))
+        sin_v = abs(math.sin(radians))
+        half_w = ((float(item.w) * cos_v) + (float(item.h) * sin_v)) * float(item.scale()) / 2.0
+        half_h = ((float(item.w) * sin_v) + (float(item.h) * cos_v)) * float(item.scale()) / 2.0
+        x = max(half_w, min(float(pos.x()), max(half_w, page_w - half_w)))
+        y = max(half_h, min(float(pos.y()), max(half_h, page_h - half_h)))
+        return QPointF(x, y)
+
+    def copy_stamp_spec_to_missing_pages(
+        self, spec: dict, page_indexes, options: dict | None = None, skip_source_page: bool = False
+    ) -> dict:
+        if not spec.get("asset_id"):
+            return {"added": 0, "skipped": 0}
+
+        options = options or {}
+        entries = []
+        skipped = 0
+        source_page = spec.get("source_page")
+        for page_idx in page_indexes:
+            if skip_source_page and page_idx == source_page:
+                continue
+            self._page_stamps.setdefault(page_idx, [])
+            if self._has_same_stamp_on_page(page_idx, spec["asset_id"]):
+                skipped += 1
+                continue
+            item, pos = self._clone_stamp_for_page(spec, page_idx, options)
+            item.setVisible(page_idx == self._current_page)
+            item.movement_finished.connect(self._on_stamp_modified)
+            item.action_requested.connect(self._on_stamp_action)
+            entries.append((item, pos, page_idx))
+
+        if entries:
+            self.undo_stack.push(AddStampsBatchCommand(self._scene, entries, self._page_stamps))
+            self._update_binding_placement()
+        return {"added": len(entries), "skipped": skipped}
+
+    def copy_stamp_to_missing_pages(self, src_item: StampItem, page_indexes, options: dict | None = None) -> dict:
+        if getattr(src_item, "category", "stamps") != "stamps" or not src_item.asset_id:
+            return {"added": 0, "skipped": 0}
+        return self.copy_stamp_spec_to_missing_pages(
+            self.build_stamp_copy_spec(src_item), page_indexes, options, skip_source_page=True
+        )
 
     def _find_binding_reference_width_a4(self, asset_id: str) -> float | None:
         if not asset_id:
@@ -412,6 +554,8 @@ class CanvasView(QGraphicsView):
         item = StampItem(pixmap, asset_id)
         item.category = category
         item.page_index = self._current_page
+        item.copy_random_angle_enabled = bool(self._random_copy_settings.get("copy_random_angle_enabled", False))
+        item.copy_random_position_enabled = bool(self._random_copy_settings.get("copy_random_position_enabled", False))
         scene_pos = self.mapToScene(view_pos)
         scene_pos = QPointF(scene_pos.x(), scene_pos.y())
         item.setZValue(10)
@@ -433,6 +577,8 @@ class CanvasView(QGraphicsView):
         item = StampItem(pixmap, asset_id)
         item.category = category
         item.page_index = self._current_page
+        item.copy_random_angle_enabled = bool(self._random_copy_settings.get("copy_random_angle_enabled", False))
+        item.copy_random_position_enabled = bool(self._random_copy_settings.get("copy_random_position_enabled", False))
         item.setZValue(10)
 
         viewport_center = self.viewport().rect().center()
@@ -468,6 +614,20 @@ class CanvasView(QGraphicsView):
             target_width_a4 = self._item_width_a4(item)
             if target_width_a4 > 1.0:
                 self.same_stamp_size_unified.emit(item.asset_id, target_width_a4)
+        elif action == "copy_to_document":
+            self.copy_stamp_to_document_requested.emit(item, self._copy_options_from_item(item))
+        elif action == "copy_to_open_documents":
+            self.copy_stamp_to_open_documents_requested.emit(
+                self.build_stamp_copy_spec(item), self._copy_options_from_item(item)
+            )
+        elif action == "toggle_copy_random_angle":
+            self._random_copy_settings["copy_random_angle_enabled"] = bool(item.copy_random_angle_enabled)
+            self._apply_random_copy_settings_to_items()
+            self.random_copy_settings_changed.emit(dict(self._random_copy_settings))
+        elif action == "toggle_copy_random_position":
+            self._random_copy_settings["copy_random_position_enabled"] = bool(item.copy_random_position_enabled)
+            self._apply_random_copy_settings_to_items()
+            self.random_copy_settings_changed.emit(dict(self._random_copy_settings))
         elif action == "delete":
             self.undo_stack.push(RemoveStampCommand(self._scene, item, self._page_stamps))
 
@@ -530,7 +690,10 @@ class CanvasView(QGraphicsView):
                 abs_path = self._assets_manager.get_absolute_path(target["path"])
                 pixmap = QPixmap(abs_path)
                 item = StampItem(pixmap, st["asset_id"])
+                item.category = target.get("category") or ("signatures" if target in self._assets_manager.get_assets("signatures") else "stamps")
                 item.page_index = page_idx
+                item.copy_random_angle_enabled = bool(self._random_copy_settings.get("copy_random_angle_enabled", False))
+                item.copy_random_position_enabled = bool(self._random_copy_settings.get("copy_random_position_enabled", False))
                 item.setPos(QPointF(st["x"], st["y"]))
                 item.setScale(st["scale"])
                 item.setRotation(st["rotation"])

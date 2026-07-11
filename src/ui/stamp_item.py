@@ -26,6 +26,8 @@ class StampItem(QGraphicsObject):
         
         self.pixmap = pixmap
         self.asset_id = asset_id # 保存图片ID方便后续溯源
+        self.copy_random_angle_enabled = False
+        self.copy_random_position_enabled = False
         
         # 尺寸
         self.w = pixmap.width()
@@ -223,9 +225,22 @@ class StampItem(QGraphicsObject):
         send_back = menu.addAction("移到底层")
         unify_document = None
         unify_open_documents = None
+        copy_document = None
+        copy_open_documents = None
+        random_angle = None
+        random_position = None
         if getattr(self, "category", "stamps") == "stamps":
             unify_document = menu.addAction("统一当前文档全部页面的印章尺寸")
             unify_open_documents = menu.addAction("统一所有已打开文档中的同款印章尺寸")
+            menu.addSeparator()
+            copy_document = menu.addAction("将此印章复制到当前文档的其余页面")
+            copy_open_documents = menu.addAction("将此印章复制到其余已打开文档")
+            random_angle = menu.addAction("复制时使用随机角度")
+            random_angle.setCheckable(True)
+            random_angle.setChecked(bool(self.copy_random_angle_enabled))
+            random_position = menu.addAction("复制时使用随机位置")
+            random_position.setCheckable(True)
+            random_position.setChecked(bool(self.copy_random_position_enabled))
         menu.addSeparator()
         delete_item = menu.addAction("删除")
         
@@ -238,5 +253,15 @@ class StampItem(QGraphicsObject):
             self.action_requested.emit(self, "unify_size_document")
         elif action == unify_open_documents:
             self.action_requested.emit(self, "unify_size_open_documents")
+        elif action == copy_document:
+            self.action_requested.emit(self, "copy_to_document")
+        elif action == copy_open_documents:
+            self.action_requested.emit(self, "copy_to_open_documents")
+        elif action == random_angle:
+            self.copy_random_angle_enabled = random_angle.isChecked()
+            self.action_requested.emit(self, "toggle_copy_random_angle")
+        elif action == random_position:
+            self.copy_random_position_enabled = random_position.isChecked()
+            self.action_requested.emit(self, "toggle_copy_random_position")
         elif action == delete_item:
             self.action_requested.emit(self, "delete")

@@ -21,6 +21,31 @@ class AddStampCommand(QUndoCommand):
         self.item.setPos(self.position)
 
 
+class AddStampsBatchCommand(QUndoCommand):
+    def __init__(self, scene, entries, page_stamps, text="复制印章"):
+        super().__init__(text)
+        self.scene = scene
+        self.entries = list(entries)
+        self.page_stamps = page_stamps
+
+    def undo(self):
+        for item, _position, page_index in self.entries:
+            self.scene.removeItem(item)
+            page_items = self.page_stamps.get(page_index, [])
+            if item in page_items:
+                page_items.remove(item)
+
+    def redo(self):
+        for item, position, page_index in self.entries:
+            if item.scene() is not self.scene:
+                self.scene.addItem(item)
+            item.page_index = page_index
+            item.setPos(position)
+            page_items = self.page_stamps.setdefault(page_index, [])
+            if item not in page_items:
+                page_items.append(item)
+
+
 class RemoveStampCommand(QUndoCommand):
     def __init__(self, scene, item, page_stamps=None, text="删除印章"):
         super().__init__(text)
@@ -74,4 +99,3 @@ class ModifyStampCommand(QUndoCommand):
         self.item.setPos(self.new_pos)
         self.item.setScale(self.new_scale)
         self.item.setRotation(self.new_rotation)
-

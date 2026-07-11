@@ -268,16 +268,7 @@ class RenderEngine:
 
             if decolor_params and decolor_params.get("enabled"):
                 cv_img = pil_to_numpy(orig_pil)
-                cv_img = CVProcessor.decolorize(
-                    cv_img,
-                    threshold=decolor_params.get("threshold", 120),
-                    mode=decolor_params.get("mode", "otsu"),
-                    red_preserve_strength=decolor_params.get("red_preserve_strength", 0.85),
-                )
-                cv_img = CVProcessor.add_paper_noise(
-                    cv_img,
-                    intensity=decolor_params.get("noise_intensity", 0.03),
-                )
+                cv_img = CVProcessor.enhance_document(cv_img, decolor_params.get("background_cleanup", 50), decolor_params.get("fine_line_preservation", 70))
                 base_bg = numpy_to_pil(cv_img).convert("RGBA")
             else:
                 base_bg = orig_pil.copy().convert("RGBA")

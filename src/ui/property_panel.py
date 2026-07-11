@@ -52,77 +52,35 @@ class PropertyPanel(QWidget):
         layout.addWidget(file_group)
 
         # ── 去色参数区（M3 阶段实装）──
-        decolor_group = QGroupBox("🖤 扫描风/去色处理")
+        decolor_group = QGroupBox("✨ 智能增强")
         decolor_layout = QVBoxLayout()
-        
-        # 1. 主控启用总控开关
-        self.chk_enable_decolor = QCheckBox("启用底层去色降灰扫描引擎")
+
+        self.chk_enable_decolor = QCheckBox("智能增强文档")
         self.chk_enable_decolor.setChecked(True)
         self.chk_enable_decolor.toggled.connect(self._emit_decolor_params)
         decolor_layout.addWidget(self.chk_enable_decolor)
-        
-        # 2. 曝光二值化算法切换
-        mode_layout = QFormLayout()
-        self.combo_mode = QComboBox()
-        self.combo_mode.addItems(["otsu", "adaptive", "manual"])
-        self.combo_mode.currentIndexChanged.connect(self._emit_decolor_params)
-        mode_layout.addRow("解析算法:", self.combo_mode)
-        decolor_layout.addLayout(mode_layout)
 
-        # 3. 曝光度(Threshold)拖拉杠杆
-        thresh_layout = QFormLayout()
-        self.slider_thresh = QSlider(Qt.Orientation.Horizontal)
-        self.slider_thresh.setRange(50, 250)
-        self.slider_thresh.setValue(120)
-        self.label_thresh_val = QLabel("120")
-        self.slider_thresh.valueChanged.connect(self._on_thresh_slide)
-        self.slider_thresh.valueChanged.connect(self._emit_decolor_params)
-        self.slider_thresh.sliderReleased.connect(self._emit_decolor_params)
-        
-        box_th = QHBoxLayout()
-        box_th.addWidget(self.slider_thresh)
-        box_th.addWidget(self.label_thresh_val)
-        thresh_layout.addRow("脱色曝光界限:", box_th)
-        decolor_layout.addLayout(thresh_layout)
+        controls = QFormLayout()
+        self.slider_background_cleanup = QSlider(Qt.Orientation.Horizontal)
+        self.slider_background_cleanup.setRange(0, 100)
+        self.slider_background_cleanup.setValue(50)
+        self.label_background_cleanup = QLabel("50 %")
+        self.slider_background_cleanup.valueChanged.connect(self._emit_decolor_params)
+        background_row = QHBoxLayout()
+        background_row.addWidget(self.slider_background_cleanup)
+        background_row.addWidget(self.label_background_cleanup)
+        controls.addRow("背景清理强度:", background_row)
 
-        # 4. 白皮肌理造纸颗粒强度
-        noise_layout = QFormLayout()
-        self.slider_noise = QSlider(Qt.Orientation.Horizontal)
-        self.slider_noise.setRange(0, 100) # 对应 0 到 0.1
-        self.slider_noise.setValue(30)
-        self.label_noise_val = QLabel("3.0 %")
-        self.slider_noise.valueChanged.connect(self._on_noise_slide)
-        self.slider_noise.sliderReleased.connect(self._emit_decolor_params)
-        
-        box_n = QHBoxLayout()
-        box_n.addWidget(self.slider_noise)
-        box_n.addWidget(self.label_noise_val)
-        noise_layout.addRow("纸张纤维噪粒:", box_n)
-        decolor_layout.addLayout(noise_layout)
-
-        red_layout = QFormLayout()
-        self.slider_red_preserve = QSlider(Qt.Orientation.Horizontal)
-        self.slider_red_preserve.setRange(0, 100)
-        self.slider_red_preserve.setValue(85)
-        self.label_red_preserve_val = QLabel("85 %")
-        self.slider_red_preserve.valueChanged.connect(self._on_red_preserve_slide)
-        self.slider_red_preserve.valueChanged.connect(self._emit_decolor_params)
-        self.slider_red_preserve.sliderReleased.connect(self._emit_decolor_params)
-
-        box_r = QHBoxLayout()
-        box_r.addWidget(self.slider_red_preserve)
-        box_r.addWidget(self.label_red_preserve_val)
-        red_layout.addRow("红章保留强度:", box_r)
-        decolor_layout.addLayout(red_layout)
-
-        box_decolor_actions = QHBoxLayout()
-        self.btn_apply_decolor = QPushButton("应用灰度")
-        self.btn_apply_decolor.clicked.connect(self._emit_apply_decolor)
-        self.btn_cancel_decolor = QPushButton("取消灰度")
-        self.btn_cancel_decolor.clicked.connect(self._emit_cancel_decolor)
-        box_decolor_actions.addWidget(self.btn_apply_decolor)
-        box_decolor_actions.addWidget(self.btn_cancel_decolor)
-        decolor_layout.addLayout(box_decolor_actions)
+        self.slider_fine_line = QSlider(Qt.Orientation.Horizontal)
+        self.slider_fine_line.setRange(0, 100)
+        self.slider_fine_line.setValue(70)
+        self.label_fine_line = QLabel("70 %")
+        self.slider_fine_line.valueChanged.connect(self._emit_decolor_params)
+        fine_row = QHBoxLayout()
+        fine_row.addWidget(self.slider_fine_line)
+        fine_row.addWidget(self.label_fine_line)
+        controls.addRow("细线保留强度:", fine_row)
+        decolor_layout.addLayout(controls)
 
         decolor_group.setLayout(decolor_layout)
         layout.addWidget(decolor_group)
@@ -291,38 +249,21 @@ class PropertyPanel(QWidget):
         self.spin_binding_y.setEnabled(checked)
 
     def _set_decolor_ui_enabled(self, checked: bool):
-        self.combo_mode.setEnabled(checked)
-        self.slider_thresh.setEnabled(checked)
-        self.slider_noise.setEnabled(checked)
-        self.slider_red_preserve.setEnabled(checked)
-        self.btn_apply_decolor.setEnabled(True)
-        self.btn_cancel_decolor.setEnabled(True)
-
-    def _on_thresh_slide(self, val):
-        self.label_thresh_val.setText(str(val))
-        if self.chk_enable_decolor.isChecked() and self.combo_mode.currentText() != "manual":
-            self.combo_mode.setCurrentText("manual")
-    
-    def _on_noise_slide(self, val):
-        self.label_noise_val.setText(f"{val/10.0:.1f} %")
-
-    def _on_red_preserve_slide(self, val):
-        self.label_red_preserve_val.setText(f"{val} %")
+        self.slider_background_cleanup.setEnabled(checked)
+        self.slider_fine_line.setEnabled(checked)
 
     def _emit_decolor_params(self):
         """发送配置字典供挂载点提取处理并触发 CVEngine 运算"""
-        self.slider_thresh.setEnabled(self.chk_enable_decolor.isChecked())
-
+        self.label_background_cleanup.setText(f"{self.slider_background_cleanup.value()} %")
+        self.label_fine_line.setText(f"{self.slider_fine_line.value()} %")
         params = self._collect_decolor_params()
         self.decolor_params_changed.emit(params)
 
     def _collect_decolor_params(self):
         return {
             "enabled": self.chk_enable_decolor.isChecked(),
-            "mode": self.combo_mode.currentText(),
-            "threshold": self.slider_thresh.value(),
-            "noise_intensity": self.slider_noise.value() / 1000.0,
-            "red_preserve_strength": self.slider_red_preserve.value() / 100.0,
+            "background_cleanup": self.slider_background_cleanup.value(),
+            "fine_line_preservation": self.slider_fine_line.value(),
         }
 
     def _emit_apply_decolor(self):
@@ -394,39 +335,19 @@ class PropertyPanel(QWidget):
         if not params:
             return
 
-        widgets = [
-            self.chk_enable_decolor,
-            self.combo_mode,
-            self.slider_thresh,
-            self.slider_noise,
-            self.slider_red_preserve,
-        ]
+        widgets = [self.chk_enable_decolor, self.slider_background_cleanup, self.slider_fine_line]
         for w in widgets:
             w.blockSignals(True)
 
         enabled = bool(params.get("enabled", self.chk_enable_decolor.isChecked()))
-        mode = params.get("mode", self.combo_mode.currentText())
-        threshold = int(params.get("threshold", self.slider_thresh.value()))
-        noise = float(params.get("noise_intensity", self.slider_noise.value() / 1000.0))
-        red_preserve = float(params.get("red_preserve_strength", self.slider_red_preserve.value() / 100.0))
+        background_cleanup = int(params.get("background_cleanup", 50))
+        fine_line = int(params.get("fine_line_preservation", 70))
 
         self.chk_enable_decolor.setChecked(enabled)
-        idx = self.combo_mode.findText(mode)
-        if idx >= 0:
-            self.combo_mode.setCurrentIndex(idx)
-        self.slider_thresh.setValue(max(self.slider_thresh.minimum(), min(self.slider_thresh.maximum(), threshold)))
-        slider_noise = int(round(noise * 1000))
-        self.slider_noise.setValue(max(self.slider_noise.minimum(), min(self.slider_noise.maximum(), slider_noise)))
-        slider_red_preserve = int(round(red_preserve * 100))
-        self.slider_red_preserve.setValue(
-            max(
-                self.slider_red_preserve.minimum(),
-                min(self.slider_red_preserve.maximum(), slider_red_preserve),
-            )
-        )
-        self.label_thresh_val.setText(str(self.slider_thresh.value()))
-        self.label_noise_val.setText(f"{self.slider_noise.value()/10.0:.1f} %")
-        self.label_red_preserve_val.setText(f"{self.slider_red_preserve.value()} %")
+        self.slider_background_cleanup.setValue(max(0, min(100, background_cleanup)))
+        self.slider_fine_line.setValue(max(0, min(100, fine_line)))
+        self.label_background_cleanup.setText(f"{self.slider_background_cleanup.value()} %")
+        self.label_fine_line.setText(f"{self.slider_fine_line.value()} %")
 
         for w in widgets:
             w.blockSignals(False)

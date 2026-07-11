@@ -135,6 +135,8 @@ class MainWindow(QMainWindow):
 
         self._assets_panel._stamp_list.stamp_double_clicked.connect(self._on_stamp_double_clicked)
         self._assets_panel._signature_list.stamp_double_clicked.connect(self._on_stamp_double_clicked)
+        self._assets_panel.open_requested.connect(self._on_open_file)
+        self._assets_panel.export_pdf_requested.connect(self._on_export_pdf)
 
         splitter.setSizes([220, 860, 280])
         splitter.setStretchFactor(0, 0)
@@ -198,10 +200,8 @@ class MainWindow(QMainWindow):
     def _read_panel_decolor_params(self):
         return {
             "enabled": self._property_panel.chk_enable_decolor.isChecked(),
-            "mode": self._property_panel.combo_mode.currentText(),
-            "threshold": self._property_panel.slider_thresh.value(),
-            "noise_intensity": self._property_panel.slider_noise.value() / 1000.0,
-            "red_preserve_strength": self._property_panel.slider_red_preserve.value() / 100.0,
+            "background_cleanup": self._property_panel.slider_background_cleanup.value(),
+            "fine_line_preservation": self._property_panel.slider_fine_line.value(),
         }
 
     def _read_panel_binding_params(self):
@@ -260,10 +260,8 @@ class MainWindow(QMainWindow):
         """Build a stable signature for lazy per-page CV cache."""
         return (
             bool(params.get("enabled")),
-            str(params.get("mode", "otsu")),
-            int(params.get("threshold", 120)),
-            round(float(params.get("noise_intensity", 0.03)), 5),
-            round(float(params.get("red_preserve_strength", 0.85)), 5),
+            int(params.get("background_cleanup", 50)),
+            int(params.get("fine_line_preservation", 70)),
         )
 
     def _invalidate_render_cache(self, ctx: dict):
@@ -321,8 +319,9 @@ class MainWindow(QMainWindow):
         canvas_widget.orientation_requested.connect(lambda landscape, c=ctx: self._on_orientation_requested(c, landscape))
         canvas_widget.canvas_view.binding_moved.connect(lambda y, c=ctx: self._on_binding_moved(c, y))
         canvas_widget.canvas_view.stamp_size_unified.connect(lambda w, c=ctx: self._on_stamp_size_unified(c, w))
+        canvas_widget.canvas_view.same_stamp_size_unified.connect(self._on_same_stamp_size_unified)
 
-        self._show_ctx_page(ctx, 0)
+        self._render_ctx_page(ctx, 0)
 
         tab_index = self._doc_tabs.addTab(canvas_widget, path.name)
         self._doc_tabs.setTabToolTip(tab_index, file_path)
@@ -337,7 +336,10 @@ class MainWindow(QMainWindow):
             self._bind_undo_stack(None)
             self.setWindowTitle(self.APP_TITLE)
             self._property_panel.update_file_info("未加载", 0, 0, 0)
+            self._assets_panel.set_export_enabled(False)
             return
+
+        self._assets_panel.set_export_enabled(True)
 
         self._bind_undo_stack(ctx["canvas_widget"].canvas_view.undo_stack)
 
@@ -372,6 +374,7 @@ class MainWindow(QMainWindow):
             self._bind_undo_stack(None)
             self.setWindowTitle(self.APP_TITLE)
             self._property_panel.update_file_info("未加载", 0, 0, 0)
+            self._assets_panel.set_export_enabled(False)
 
     def _close_current_tab(self):
         idx = self._doc_tabs.currentIndex()
@@ -421,16 +424,7 @@ class MainWindow(QMainWindow):
             return
 
         cv_img = pil_to_numpy(orig_pil)
-        cv_img = CVProcessor.decolorize(
-            cv_img,
-            threshold=params.get("threshold", 120),
-            mode=params.get("mode", "otsu"),
-            red_preserve_strength=params.get("red_preserve_strength", 0.85),
-        )
-        cv_img = CVProcessor.add_paper_noise(
-            cv_img,
-            intensity=params.get("noise_intensity", 0.03),
-        )
+        cv_img = CVProcessor.enhance_document(cv_img, params.get("background_cleanup", 50), params.get("fine_line_preservation", 70))
         result_pil = numpy_to_pil(cv_img)
         model.set_page(page_index, result_pil)
         ctx["rendered_pages"].add(page_index)
@@ -462,16 +456,7 @@ class MainWindow(QMainWindow):
             return
 
         cv_img = pil_to_numpy(orig_pil)
-        cv_img = CVProcessor.decolorize(
-            cv_img,
-            threshold=params.get("threshold", 120),
-            mode=params.get("mode", "otsu"),
-            red_preserve_strength=params.get("red_preserve_strength", 0.85),
-        )
-        cv_img = CVProcessor.add_paper_noise(
-            cv_img,
-            intensity=params.get("noise_intensity", 0.03),
-        )
+        cv_img = CVProcessor.enhance_document(cv_img, params.get("background_cleanup", 50), params.get("fine_line_preservation", 70))
         model.set_page(page_index, numpy_to_pil(cv_img))
         ctx["rendered_pages"].add(page_index)
 
@@ -519,6 +504,12 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage("已统一所有印章与骑缝章尺寸", 3000)
 
         self._update_binding_preview_for_ctx(ctx)
+
+    def _on_same_stamp_size_unified(self, asset_id: str, target_width_a4: float):
+        changed = 0
+        for ctx in self._contexts.values():
+            changed += ctx["canvas_widget"].canvas_view.unify_asset_size(asset_id, target_width_a4)
+        self._status_bar.showMessage(f"已同步所有打开文档中的同款印章：{changed} 个", 3000)
 
     def _on_binding_params_changed(self, params: dict):
         ctx = self._current_ctx()
@@ -577,16 +568,7 @@ class MainWindow(QMainWindow):
                 orig_pil = model.get_original_page(i)
                 if orig_pil:
                     cv_img = pil_to_numpy(orig_pil)
-                    cv_img = CVProcessor.decolorize(
-                        cv_img,
-                        threshold=params.get("threshold", 120),
-                        mode=params.get("mode", "otsu"),
-                        red_preserve_strength=params.get("red_preserve_strength", 0.85),
-                    )
-                    cv_img = CVProcessor.add_paper_noise(
-                        cv_img,
-                        intensity=params.get("noise_intensity", 0.03),
-                    )
+                    cv_img = CVProcessor.enhance_document(cv_img, params.get("background_cleanup", 50), params.get("fine_line_preservation", 70))
                     model.set_page(i, numpy_to_pil(cv_img))
             else:
                 model.reset_page(i)

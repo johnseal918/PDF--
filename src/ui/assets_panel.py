@@ -9,8 +9,8 @@ M2阶段完全体：
 
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QTabWidget, QListWidget, QListWidgetItem,
-    QMenu, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget, QListWidget, QListWidgetItem,
+    QMenu, QMessageBox, QPushButton
 )
 from PySide6.QtCore import Qt, Signal, QMimeData, QPoint
 from PySide6.QtGui import QIcon, QPixmap, QDragEnterEvent, QDropEvent, QDrag
@@ -88,6 +88,9 @@ class DroppableListWidget(QListWidget):
 class AssetsPanel(QWidget):
     """左侧素材管理面板核心体。"""
 
+    open_requested = Signal()
+    export_pdf_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumWidth(210)
@@ -98,6 +101,17 @@ class AssetsPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
+
+        shortcuts = QHBoxLayout()
+        self.btn_open_file = QPushButton("打开文件")
+        self.btn_export_pdf = QPushButton("导出 PDF")
+        self.btn_export_pdf.setEnabled(False)
+        self.btn_export_pdf.setToolTip("请先打开文件")
+        self.btn_open_file.clicked.connect(self.open_requested.emit)
+        self.btn_export_pdf.clicked.connect(self.export_pdf_requested.emit)
+        shortcuts.addWidget(self.btn_open_file)
+        shortcuts.addWidget(self.btn_export_pdf)
+        layout.addLayout(shortcuts)
 
         title = QLabel("📦 素材库")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -133,6 +147,10 @@ class AssetsPanel(QWidget):
         # 开机刷新全量显示
         self._refresh_list("stamps")
         self._refresh_list("signatures")
+
+    def set_export_enabled(self, enabled: bool):
+        self.btn_export_pdf.setEnabled(enabled)
+        self.btn_export_pdf.setToolTip("" if enabled else "请先打开文件")
 
     def _get_list_widget(self, category: str) -> DroppableListWidget:
         if category == "stamps":

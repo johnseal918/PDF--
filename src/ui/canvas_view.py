@@ -30,6 +30,7 @@ class CanvasView(QGraphicsView):
     zoom_changed = Signal(float)
     binding_moved = Signal(int)
     stamp_size_unified = Signal(float)
+    same_stamp_size_unified = Signal(str, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -409,6 +410,7 @@ class CanvasView(QGraphicsView):
         abs_path = self._assets_manager.get_absolute_path(target["path"])
         pixmap = QPixmap(abs_path)
         item = StampItem(pixmap, asset_id)
+        item.category = category
         item.page_index = self._current_page
         scene_pos = self.mapToScene(view_pos)
         scene_pos = QPointF(scene_pos.x(), scene_pos.y())
@@ -429,6 +431,7 @@ class CanvasView(QGraphicsView):
         abs_path = self._assets_manager.get_absolute_path(target["path"])
         pixmap = QPixmap(abs_path)
         item = StampItem(pixmap, asset_id)
+        item.category = category
         item.page_index = self._current_page
         item.setZValue(10)
 
@@ -459,8 +462,12 @@ class CanvasView(QGraphicsView):
         elif action == "send_back":
             min_z = min((st.zValue() for st in self._page_stamps.get(self._current_page, [])), default=10)
             item.setZValue(max(1, min_z - 1))
-        elif action == "unify_size_all":
+        elif action == "unify_size_document":
             self._unify_all_stamp_sizes_from_item(item)
+        elif action == "unify_size_open_documents":
+            target_width_a4 = self._item_width_a4(item)
+            if target_width_a4 > 1.0:
+                self.same_stamp_size_unified.emit(item.asset_id, target_width_a4)
         elif action == "delete":
             self.undo_stack.push(RemoveStampCommand(self._scene, item, self._page_stamps))
 
@@ -489,6 +496,18 @@ class CanvasView(QGraphicsView):
             if page_data:
                 data[page_idx] = page_data
         return data
+
+    def unify_asset_size(self, asset_id: str, target_width_a4: float) -> int:
+        changed = 0
+        for page_idx, items in self._page_stamps.items():
+            page_w, page_h = self._page_size_for_index(page_idx)
+            target_width = RenderEngine.binding_units_on_page(page_w, page_h, target_width_a4)
+            for item in items:
+                if item.asset_id != asset_id or getattr(item, "category", "stamps") != "stamps" or item.w <= 0:
+                    continue
+                item.setScale(max(0.05, min(target_width / float(item.w), 20.0)))
+                changed += 1
+        return changed
 
     def clear_all_stamps(self):
         for items in self._page_stamps.values():

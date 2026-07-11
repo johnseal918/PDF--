@@ -41,6 +41,45 @@ class CVProcessor:
         )
 
     @staticmethod
+    def enhance_document(
+        image: np.ndarray,
+        background_cleanup: int = 50,
+        fine_line_preservation: int = 70,
+    ) -> np.ndarray:
+        """Clean the background while preserving text, fine lines, and red ink."""
+        cleanup = max(0, min(100, int(background_cleanup)))
+        fine = max(0, min(100, int(fine_line_preservation)))
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        strong_threshold = int(round(105 + cleanup * 0.7))
+        strong_mask = gray <= strong_threshold
+
+        block_size = 15 + 2 * int(round(fine / 10))
+        if block_size % 2 == 0:
+            block_size += 1
+        c_value = max(1, int(round(8 - fine * 0.1)))
+        local_mask = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            block_size,
+            c_value,
+        ) > 0
+        max_line_gray = int(round(220 + fine * 0.4))
+        local_background = cv2.GaussianBlur(gray, (0, 0), sigmaX=7.0)
+        local_contrast = local_background.astype(np.int16) - gray.astype(np.int16)
+        contrast_threshold = max(1, int(round(10 - fine * 0.14)))
+        contrast_mask = (local_contrast >= contrast_threshold) & (gray <= 250)
+        content_mask = strong_mask | (local_mask & (gray <= max_line_gray)) | contrast_mask
+
+        result = np.full_like(image, 255)
+        result[content_mask] = (0, 0, 0)
+        red_mask = CVProcessor._red_ink_mask(image, 1.0)
+        result[red_mask] = image[red_mask]
+        return result
+
+    @staticmethod
     def decolorize(
         image: np.ndarray,
         threshold: int = 120,
